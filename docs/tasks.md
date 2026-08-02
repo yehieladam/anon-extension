@@ -70,7 +70,32 @@ unit test with the same valid/invalid cases the server checks use.
   Owner: unassigned
   DoD: restore(anonymize(text)) === text property test on synthetic docs; handles repeated placeholders and missing-key errors explicitly.
 
-## P2 — popup UX (React shell in `src/`, imports `@engine/*`)
+## P2W — web app (public front door, ships first — see CLAUDE.md decision 2026-08-02)
+
+The **web app is the first public surface** (zero install, best reach, no Store review, and it can run
+`crossOriginIsolated` → multi-threaded WASM → faster NER). Reuses `@engine/*` unchanged. The popup
+below (P2) becomes the **fast-follow** extension. Both share the engine — this is go-to-market ordering.
+
+- [ ] **P2W-01** React + Vite web app shell on static hosting (Vercel/CDN), imports `@engine/*`
+  Owner: unassigned
+  Scope: serve with COOP/COEP headers so the page is `crossOriginIsolated` → `numThreads > 1` for WASM (unlike the MV3 popup); vendor onnxruntime `.mjs`+`.wasm`; model from HF CDN for now (self-host in P4-02).
+  DoD: `npm run build` web target deploys; NER runs in-browser; no PII network calls (only model fetch).
+- [ ] **P2W-02** Paste flow end-to-end: detect → highlight by type → anonymized copy → download key
+  Owner: unassigned
+  DoD: real detections only; RTL correct; per-type counts; mirrors P2-02 but on the web surface.
+- [ ] **P2W-03** "Anonymize before the AI" round-trip UI: paste an AI reply containing placeholders → restore originals (uses P1-15)
+  Owner: unassigned
+  Scope: the killer use case both competitors monetize (see `docs/differentiation.md`) — strip PII → send sanitized text to ChatGPT/Claude → paste the answer back → real values restored. All in-browser; the token→value map lives only in the tab.
+  DoD: full round-trip works on a real doc + its key; restored answer matches originals; missing-key handled explicitly.
+- [ ] **P2W-04** "Zero network" proof surface (turn the privacy claim into something verifiable)
+  Owner: unassigned
+  Scope: small badge/panel stating "0 network requests (except the one-time model download)"; extend the WASM badge from the spike. Makes the marketing claim (`docs/marketing.md`) concrete.
+  DoD: badge reflects real state; no false claim; visible in the UI.
+- [ ] **P2W-05** Organic design tokens (cream/terracotta/sage, Suez One/Rubik) on the web app
+  Owner: unassigned
+  DoD: matches approved design system; RTL + LTR both checked.
+
+## P2 — popup UX (Chrome extension, fast-follow after P2W; React shell in `src/`, imports `@engine/*`)
 
 - [ ] **P2-01** Migrate the spike into the Vite/crxjs build (retire `extension/` as the loadable)
   Owner: unassigned
@@ -85,8 +110,9 @@ unit test with the same valid/invalid cases the server checks use.
 - [ ] **P2-04** Keep-word rescue + per-type toggles (mirror the Streamlit tool)
   Owner: unassigned
   DoD: manual keeps thread through preview, key CSV, and outputs.
-- [ ] **P2-05** Restore flow UI: upload key + anonymized text → originals (MVP, uses P1-15)
+- [ ] **P2-05** Restore / "anonymize before the AI" round-trip UI in the popup (MVP, uses P1-15)
   Owner: unassigned
+  Scope: same killer flow as P2W-03 but in the extension popup — upload key + anonymized text (or an AI reply with placeholders) → originals restored locally.
   DoD: round-trip works in the popup on a real anonymized doc + its key.
 
 ## P3 — files (no PDF — see separate track)
@@ -121,10 +147,18 @@ unit test with the same valid/invalid cases the server checks use.
 - [ ] **P5-04** Data-safety form ("no data collected") + submit + iterate on review
   Owner: unassigned
   DoD: extension published or review feedback triaged into tasks.
+- [ ] **P5-05** "Install the extension" CTA on the web app → links to the Chrome Web Store listing
+  Owner: unassigned
+  Scope: Chrome removed inline install (2018) — this is a link/button to the CWS page, not an in-page install. Converts web visitors into returning users (see CLAUDE.md web-first decision).
+  DoD: CTA present on the web app; links to the live CWS listing (depends on P5-04 published).
 
 ## Separate track — PDF in-place redaction spike (own timeline, NOT coupled to MVP)
 
 - [ ] **PDF-01** Research spike: pdf-lib true in-place redaction feasibility in the browser
   Owner: unassigned
   Scope: re-examine the server's hard-won word-run matching + box-fitting logic (memories `pdf-inplace-redaction-requirement`, `pdf-redaction-precise-matching`); treat as research-risk, not a feature ticket.
+  DoD: written GO/NO-GO with a demo or a documented dead end.
+- [ ] **PDF-02** Research spike: in-browser OCR for scanned PDFs (GO/NO-GO)
+  Owner: unassigned
+  Scope: competitors (anonym.legal) OCR scanned PDFs — a real need for legal docs. Assess a client-side OCR path (e.g. Tesseract.js) with Hebrew; weigh model/size/accuracy cost against value. Research-risk, not a feature ticket.
   DoD: written GO/NO-GO with a demo or a documented dead end.

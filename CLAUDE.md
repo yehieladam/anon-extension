@@ -7,8 +7,15 @@
 
 A **fully client-side** Hebrew PII anonymizer that runs entirely in the user's browser — detection,
 anonymization, and restore all happen locally, **no server, no account, PII never leaves the device**.
-Shipped first as a **public Chrome extension** (popup), later as a public web app that reuses the same
-engine. The privacy-by-architecture story IS the product.
+Shipped first as a **public web app** (zero-install front door — best reach for a free tool, no Store
+review gate, and it can run `crossOriginIsolated` for multi-threaded WASM), with a **Chrome extension
+as a fast-follow** (always-on popup + select-text on any page; the web app links out to the Web Store
+to install it). **Both reuse the same framework-free engine** — this ordering is a go-to-market choice,
+not a technical one. The privacy-by-architecture story IS the product.
+
+> **Decision (2026-08-02): web app first, extension fast-follow.** Supersedes the earlier
+> "extension first" wording. Rationale in `docs/differentiation.md`. The MV3 spike stays loadable
+> (S-01) as the proof it works under extension constraints; it is not retired by this change.
 
 This is the client-side track. A separate server-side tool (Python/Streamlit/Presidio, in another
 repo, deployed to the BAI portal) already exists and is NOT part of this repo.
