@@ -37,6 +37,13 @@ doesn't interrupt it); later opens load from cache. Full steps + expected output
 
 ## Contributing / branches
 
-`main` is the shared, protected line. Each developer works on their own branch and opens a PR into
-`main` — no direct pushes to `main`. See `docs/chrome-extension-plan.md` for the roadmap and the
-open decisions.
+`main` is the shared, protected line. One branch per task (`feat/…`, `fix/…`, `chore/…`), claim the
+task in `docs/tasks.md` first, PR → CI → 1 review → merge — no direct pushes to `main`. Full working
+agreement in `CONTRIBUTING.md`; roadmap in `docs/chrome-extension-plan.md`; task board in
+`docs/tasks.md`.
+
+## License
+
+MIT (see `LICENSE`). Note: third-party model/library licenses (dictabert-ner and its ONNX
+conversion, transformers.js Apache-2.0) must be verified before any public Store launch — not yet
+confirmed cleared.

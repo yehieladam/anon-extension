@@ -1,0 +1,43 @@
+{
+  "name": "anon-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fully client-side Hebrew PII anonymizer - Chrome extension (MV3) + reusable framework-free engine",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier -w .",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "4.2.0"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0",
+    "@eslint/js": "^9.32.0",
+    "@types/node": "^20.19.9",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^9.32.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "postcss": "^8.5.6",
+    "prettier": "^3.6.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.38.0",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.4"
+  }
+}

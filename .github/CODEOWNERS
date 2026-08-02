@@ -1,0 +1,6 @@
+# ADVISORY ownership: both developers overlap on all areas for now, so both are requested
+# as reviewers on every PR. This is a review-routing convention, not a hard gate — the
+# branch-protection rule ("1 approving review") is what actually blocks merges.
+# Revisit and split by path (engine/ vs src/) if ownership specializes later.
+
+* @yehieladam @nadavnbs

@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    # @huggingface/transformers is pinned EXACT (4.2.0) on purpose — MV3-vendored
+    # onnxruntime files must match the version transformers pins (docs/STACK.md).
+    # Do not merge a transformers bump without re-verifying the vendored runtime.
+    ignore:
+      - dependency-name: "@huggingface/transformers"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
