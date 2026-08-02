@@ -1,0 +1,5 @@
+{
+  "//": "Reserved for a separate node-only project if the root tsconfig ever splits. Today the root tsconfig.json already includes vite.config.ts / vitest.config.ts (with @types/node installed), so this file just mirrors it for tools that look for the Vite convention.",
+  "extends": "./tsconfig.json",
+  "include": ["vite.config.ts", "vitest.config.ts", "src/manifest.config.ts"]
+}

@@ -1,0 +1,8 @@
+# frozen plain-JS spike + vendored runtimes — never reformat
+extension/
+# Phase-0 reference artifacts
+browser-poc/
+dist/
+node_modules/
+package-lock.json
+*.md
