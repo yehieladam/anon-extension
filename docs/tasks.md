@@ -152,6 +152,32 @@ below (P2) becomes the **fast-follow** extension. Both share the engine — this
   Scope: Chrome removed inline install (2018) — this is a link/button to the CWS page, not an in-page install. Converts web visitors into returning users (see CLAUDE.md web-first decision).
   DoD: CTA present on the web app; links to the live CWS listing (depends on P5-04 published).
 
+## TR — trust & verifiability (cross-cutting — see `docs/trust.md`)
+
+Turns the core claim ("PII never leaves the device") from a promise into something the user —
+especially a risk-averse Israeli lawyer — can verify. This is the moat vs competitors who say
+"trust our server."
+
+- [ ] **TR-01** Strict CSP: `connect-src` locked to only the model host; publicly documented
+  Owner: unassigned
+  Scope: browser-enforced boundary (not a code promise). After model cache, effectively no network. Document the header so it is a citable trust argument. Coordinates with P2W-01 (web) and the MV3 CSP (plan §3).
+  DoD: CSP present and verified in both surfaces; a doc note explains what it blocks and why.
+- [ ] **TR-02** Extension published with zero network/host permissions; surface it in the UI
+  Owner: unassigned
+  Scope: manifest requests no host permissions / no network; Chrome then attests the extension cannot reach the network. Show this to the user as a trust signal.
+  DoD: manifest has zero network perms; UI/store copy states "Chrome confirms this extension cannot access the network."
+- [ ] **TR-03** Zero signup / account / cookies / telemetry — hard rule, stated as a trust argument
+  Owner: unassigned
+  Scope: enforce (nothing collected, no analytics, no cookies) and make it explicit in UI + privacy page. "Can't leak what we never collected."
+  DoD: verified no cookies/storage-beyond-model, no analytics; claim stated truthfully in UI and P5-01.
+- [ ] **TR-04** Open-source engine + web app; SRI + published build hash for the web deploy
+  Owner: unassigned
+  Scope: closes the "deployed JS != public source" gap for the web surface (the extension is the trust anchor; web needs SRI + a comparable published hash).
+  DoD: repo public; web build emits an integrity hash users/experts can compare; documented in trust.md.
+- [ ] **TR-05** Independent third-party security audit, report published (LATER)
+  Owner: unassigned
+  DoD: audit performed; report linked from the site.
+
 ## Separate track — PDF in-place redaction spike (own timeline, NOT coupled to MVP)
 
 - [ ] **PDF-01** Research spike: pdf-lib true in-place redaction feasibility in the browser
