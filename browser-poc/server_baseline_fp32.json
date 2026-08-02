@@ -1,0 +1,802 @@
+{
+  "model": "dicta-il/dictabert-ner (server, via src/analyze.py analyze_text)",
+  "match_rule": "same entity type + containment of normalized surface text (edge punctuation stripped); see _is_match docstring",
+  "elapsed_seconds": 3.1,
+  "sentences": [
+    {
+      "text": "דוד כהן הגיש בקשה למשרד הפנים בירושלים.",
+      "gold": [
+        {
+          "text": "דוד כהן",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "משרד הפנים",
+          "type": "ORGANIZATION",
+          "detected": true
+        },
+        {
+          "text": "ירושלים",
+          "type": "LOCATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "דוד כהן",
+          "type": "PERSON",
+          "start": 0,
+          "end": 7,
+          "score": 0.9999
+        },
+        {
+          "text": "למשרד הפנים",
+          "type": "ORGANIZATION",
+          "start": 18,
+          "end": 29,
+          "score": 0.9999
+        },
+        {
+          "text": "בירושלים",
+          "type": "LOCATION",
+          "start": 30,
+          "end": 38,
+          "score": 0.99
+        }
+      ]
+    },
+    {
+      "text": "עורכת הדין רחל לוי-אברמוביץ ייצגה את חברת אלביט מערכות בתיק האזרחי.",
+      "gold": [
+        {
+          "text": "רחל לוי-אברמוביץ",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "אלביט מערכות",
+          "type": "ORGANIZATION",
+          "detected": false
+        }
+      ],
+      "detected": [
+        {
+          "text": "רחל לוי-אברמוביץ",
+          "type": "PERSON",
+          "start": 11,
+          "end": 27,
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "מר יוסף בן דוד עבר לגור בראשון לציון בשנה שעברה.",
+      "gold": [
+        {
+          "text": "יוסף בן דוד",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "ראשון לציון",
+          "type": "LOCATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "יוסף בן דוד",
+          "type": "PERSON",
+          "start": 3,
+          "end": 14,
+          "score": 0.9999
+        },
+        {
+          "text": "בראשון לציון",
+          "type": "LOCATION",
+          "start": 24,
+          "end": 36,
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "בנק הפועלים אישר את ההלוואה של מיכל שפירא מחיפה.",
+      "gold": [
+        {
+          "text": "בנק הפועלים",
+          "type": "ORGANIZATION",
+          "detected": true
+        },
+        {
+          "text": "מיכל שפירא",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "חיפה",
+          "type": "LOCATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "בנק הפועלים",
+          "type": "ORGANIZATION",
+          "start": 0,
+          "end": 11,
+          "score": 0.9999
+        },
+        {
+          "text": "מיכל שפירא",
+          "type": "PERSON",
+          "start": 31,
+          "end": 41,
+          "score": 0.9999
+        },
+        {
+          "text": "מחיפה",
+          "type": "LOCATION",
+          "start": 42,
+          "end": 47,
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "הפגישה עם אבי רוזנברג תתקיים במשרדי טבע תעשיות פרמצבטיות בפתח תקווה.",
+      "gold": [
+        {
+          "text": "אבי רוזנברג",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "טבע תעשיות פרמצבטיות",
+          "type": "ORGANIZATION",
+          "detected": true
+        },
+        {
+          "text": "פתח תקווה",
+          "type": "LOCATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "אבי רוזנברג",
+          "type": "PERSON",
+          "start": 10,
+          "end": 21,
+          "score": 0.9999
+        },
+        {
+          "text": "טבע תעשיות פרמצבטיות",
+          "type": "ORGANIZATION",
+          "start": 36,
+          "end": 56,
+          "score": 0.9999
+        },
+        {
+          "text": "בפתח תקווה",
+          "type": "LOCATION",
+          "start": 57,
+          "end": 67,
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "שרה גולדשטיין עובדת במשרד הבריאות בתל אביב.",
+      "gold": [
+        {
+          "text": "שרה גולדשטיין",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "משרד הבריאות",
+          "type": "ORGANIZATION",
+          "detected": true
+        },
+        {
+          "text": "תל אביב",
+          "type": "LOCATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "שרה גולדשטיין",
+          "type": "PERSON",
+          "start": 0,
+          "end": 13,
+          "score": 0.9999
+        },
+        {
+          "text": "במשרד הבריאות",
+          "type": "ORGANIZATION",
+          "start": 20,
+          "end": 33,
+          "score": 0.9999
+        },
+        {
+          "text": "בתל אביב",
+          "type": "LOCATION",
+          "start": 34,
+          "end": 42,
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "ד\"ר משה פרידמן ניתח את המטופלת בבית החולים שיבא ברמת גן.",
+      "gold": [
+        {
+          "text": "משה פרידמן",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "שיבא",
+          "type": "ORGANIZATION",
+          "detected": false
+        },
+        {
+          "text": "רמת גן",
+          "type": "LOCATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "משה פרידמן",
+          "type": "PERSON",
+          "start": 4,
+          "end": 14,
+          "score": 0.9999
+        },
+        {
+          "text": "בבית החולים שיבא",
+          "type": "LOCATION",
+          "start": 31,
+          "end": 47,
+          "score": 0.9636
+        },
+        {
+          "text": "ברמת גן",
+          "type": "LOCATION",
+          "start": 48,
+          "end": 55,
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "נציגי בנק לאומי נפגשו עם ראש עיריית באר שבע.",
+      "gold": [
+        {
+          "text": "בנק לאומי",
+          "type": "ORGANIZATION",
+          "detected": true
+        },
+        {
+          "text": "באר שבע",
+          "type": "LOCATION",
+          "detected": false
+        }
+      ],
+      "detected": [
+        {
+          "text": "בנק לאומי",
+          "type": "ORGANIZATION",
+          "start": 6,
+          "end": 15,
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "התובעת, גב' נועה בר-אילן, מתגוררת ברחוב הרצל בנתניה.",
+      "gold": [
+        {
+          "text": "נועה בר-אילן",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "נתניה",
+          "type": "LOCATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "נועה בר-אילן",
+          "type": "PERSON",
+          "start": 12,
+          "end": 24,
+          "score": 0.9999
+        },
+        {
+          "text": "ברחוב הרצל",
+          "type": "LOCATION",
+          "start": 34,
+          "end": 44,
+          "score": 0.9967
+        },
+        {
+          "text": "בנתניה",
+          "type": "LOCATION",
+          "start": 45,
+          "end": 51,
+          "score": 0.9998
+        }
+      ]
+    },
+    {
+      "text": "אליהו מזרחי מונה למנכ\"ל חברת החשמל לישראל.",
+      "gold": [
+        {
+          "text": "אליהו מזרחי",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "חברת החשמל לישראל",
+          "type": "ORGANIZATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "אליהו מזרחי",
+          "type": "PERSON",
+          "start": 0,
+          "end": 11,
+          "score": 0.9999
+        },
+        {
+          "text": "חברת החשמל לישראל",
+          "type": "ORGANIZATION",
+          "start": 24,
+          "end": 41,
+          "score": 0.9998
+        }
+      ]
+    },
+    {
+      "text": "המשטרה עצרה את יעקב אוחיון סמוך לצומת גולני בגליל התחתון.",
+      "gold": [
+        {
+          "text": "יעקב אוחיון",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "צומת גולני",
+          "type": "LOCATION",
+          "detected": true
+        },
+        {
+          "text": "גליל התחתון",
+          "type": "LOCATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "יעקב אוחיון",
+          "type": "PERSON",
+          "start": 15,
+          "end": 26,
+          "score": 0.9999
+        },
+        {
+          "text": "לצומת גולני",
+          "type": "LOCATION",
+          "start": 32,
+          "end": 43,
+          "score": 0.9962
+        },
+        {
+          "text": "בגליל התחתון",
+          "type": "LOCATION",
+          "start": 44,
+          "end": 56,
+          "score": 0.9998
+        }
+      ]
+    },
+    {
+      "text": "אחותו של רון אשכנזי לומדת באוניברסיטת בן-גוריון בנגב.",
+      "gold": [
+        {
+          "text": "רון אשכנזי",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "אוניברסיטת בן-גוריון בנגב",
+          "type": "ORGANIZATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "רון אשכנזי",
+          "type": "PERSON",
+          "start": 9,
+          "end": 19,
+          "score": 0.9999
+        },
+        {
+          "text": "באוניברסיטת בן-גוריון בנגב",
+          "type": "ORGANIZATION",
+          "start": 26,
+          "end": 52,
+          "score": 0.9989
+        }
+      ]
+    },
+    {
+      "text": "חנה זילברמן פתחה חשבון בסניף בנק דיסקונט באשדוד.",
+      "gold": [
+        {
+          "text": "חנה זילברמן",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "בנק דיסקונט",
+          "type": "ORGANIZATION",
+          "detected": true
+        },
+        {
+          "text": "אשדוד",
+          "type": "LOCATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "חנה זילברמן",
+          "type": "PERSON",
+          "start": 0,
+          "end": 11,
+          "score": 0.9999
+        },
+        {
+          "text": "בנק דיסקונט",
+          "type": "ORGANIZATION",
+          "start": 29,
+          "end": 40,
+          "score": 0.9999
+        },
+        {
+          "text": "באשדוד",
+          "type": "LOCATION",
+          "start": 41,
+          "end": 47,
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "לפי הדוח של רשות המסים, עמוס דהן חייב סכום גדול למדינה.",
+      "gold": [
+        {
+          "text": "רשות המסים",
+          "type": "ORGANIZATION",
+          "detected": true
+        },
+        {
+          "text": "עמוס דהן",
+          "type": "PERSON",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "רשות המסים",
+          "type": "ORGANIZATION",
+          "start": 12,
+          "end": 22,
+          "score": 0.9999
+        },
+        {
+          "text": "עמוס דהן",
+          "type": "PERSON",
+          "start": 24,
+          "end": 32,
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "טליה אברהם ובעלה נפתלי עברו מקריית שמונה לכפר סבא.",
+      "gold": [
+        {
+          "text": "טליה אברהם",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "נפתלי",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "קריית שמונה",
+          "type": "LOCATION",
+          "detected": true
+        },
+        {
+          "text": "כפר סבא",
+          "type": "LOCATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "טליה אברהם",
+          "type": "PERSON",
+          "start": 0,
+          "end": 10,
+          "score": 0.9999
+        },
+        {
+          "text": "נפתלי",
+          "type": "PERSON",
+          "start": 17,
+          "end": 22,
+          "score": 0.9996
+        },
+        {
+          "text": "מקריית שמונה",
+          "type": "LOCATION",
+          "start": 28,
+          "end": 40,
+          "score": 0.9999
+        },
+        {
+          "text": "לכפר סבא",
+          "type": "LOCATION",
+          "start": 41,
+          "end": 49,
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "פרופ' עדינה שטרן מרצה בטכניון בחיפה.",
+      "gold": [
+        {
+          "text": "עדינה שטרן",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "טכניון",
+          "type": "ORGANIZATION",
+          "detected": true
+        },
+        {
+          "text": "חיפה",
+          "type": "LOCATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "עדינה שטרן",
+          "type": "PERSON",
+          "start": 6,
+          "end": 16,
+          "score": 0.9999
+        },
+        {
+          "text": "בטכניון",
+          "type": "ORGANIZATION",
+          "start": 22,
+          "end": 29,
+          "score": 0.9999
+        },
+        {
+          "text": "בחיפה",
+          "type": "LOCATION",
+          "start": 30,
+          "end": 35,
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "עיריית הרצליה אישרה את התוכנית של האדריכל גבי סמו.",
+      "gold": [
+        {
+          "text": "עיריית הרצליה",
+          "type": "ORGANIZATION",
+          "detected": false
+        },
+        {
+          "text": "גבי סמו",
+          "type": "PERSON",
+          "detected": false
+        }
+      ],
+      "detected": []
+    },
+    {
+      "text": "יצחק נבון-לוי חתם על הסכם עם חברת אינטל בקריית גת.",
+      "gold": [
+        {
+          "text": "יצחק נבון-לוי",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "אינטל",
+          "type": "ORGANIZATION",
+          "detected": true
+        },
+        {
+          "text": "קריית גת",
+          "type": "LOCATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "יצחק נבון-לוי",
+          "type": "PERSON",
+          "start": 0,
+          "end": 13,
+          "score": 0.9999
+        },
+        {
+          "text": "אינטל",
+          "type": "ORGANIZATION",
+          "start": 34,
+          "end": 39,
+          "score": 0.9999
+        },
+        {
+          "text": "בקריית גת",
+          "type": "LOCATION",
+          "start": 40,
+          "end": 49,
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "אמו של שלמה ביטון מאושפזת בבית חולים רמב\"ם.",
+      "gold": [
+        {
+          "text": "שלמה ביטון",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "רמב\"ם",
+          "type": "ORGANIZATION",
+          "detected": false
+        }
+      ],
+      "detected": [
+        {
+          "text": "שלמה ביטון",
+          "type": "PERSON",
+          "start": 7,
+          "end": 17,
+          "score": 0.9999
+        },
+        {
+          "text": "בבית חולים רמב\"ם",
+          "type": "LOCATION",
+          "start": 26,
+          "end": 42,
+          "score": 0.9992
+        }
+      ]
+    },
+    {
+      "text": "מכבי תל אביב אירחה את הפועל ירושלים באצטדיון החדש.",
+      "gold": [
+        {
+          "text": "מכבי תל אביב",
+          "type": "ORGANIZATION",
+          "detected": true
+        },
+        {
+          "text": "הפועל ירושלים",
+          "type": "ORGANIZATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "מכבי תל אביב",
+          "type": "ORGANIZATION",
+          "start": 0,
+          "end": 12,
+          "score": 0.9999
+        },
+        {
+          "text": "הפועל ירושלים",
+          "type": "ORGANIZATION",
+          "start": 22,
+          "end": 35,
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "רות עמר, תושבת עכו, הגישה תלונה נגד משרד התחבורה.",
+      "gold": [
+        {
+          "text": "רות עמר",
+          "type": "PERSON",
+          "detected": true
+        },
+        {
+          "text": "עכו",
+          "type": "LOCATION",
+          "detected": true
+        },
+        {
+          "text": "משרד התחבורה",
+          "type": "ORGANIZATION",
+          "detected": true
+        }
+      ],
+      "detected": [
+        {
+          "text": "רות עמר",
+          "type": "PERSON",
+          "start": 0,
+          "end": 7,
+          "score": 0.9999
+        },
+        {
+          "text": "עכו",
+          "type": "LOCATION",
+          "start": 15,
+          "end": 18,
+          "score": 0.9999
+        },
+        {
+          "text": "משרד התחבורה",
+          "type": "ORGANIZATION",
+          "start": 36,
+          "end": 48,
+          "score": 0.9999
+        }
+      ]
+    }
+  ],
+  "recall": {
+    "PERSON": {
+      "detected": 19,
+      "total": 20,
+      "recall": 0.95
+    },
+    "ORGANIZATION": {
+      "detected": 14,
+      "total": 18,
+      "recall": 0.7778
+    },
+    "LOCATION": {
+      "detected": 15,
+      "total": 16,
+      "recall": 0.9375
+    },
+    "overall": {
+      "detected": 48,
+      "total": 54,
+      "recall": 0.8889
+    }
+  }
+}

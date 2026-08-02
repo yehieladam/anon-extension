@@ -1,0 +1,553 @@
+{
+  "backend": "webgpu",
+  "loadMs": 35154,
+  "avgInferMs": 393,
+  "browserRecall": {
+    "PERSON": {
+      "detected": 16,
+      "gold": 20,
+      "recall": "80.00%"
+    },
+    "ORGANIZATION": {
+      "detected": 13,
+      "gold": 18,
+      "recall": "72.22%"
+    },
+    "LOCATION": {
+      "detected": 15,
+      "gold": 16,
+      "recall": "93.75%"
+    }
+  },
+  "overall": {
+    "detected": 44,
+    "gold": 54,
+    "recall": "81.48%"
+  },
+  "misses": [
+    {
+      "sentence": 1,
+      "text": "רחל לוי-אברמוביץ",
+      "type": "PERSON",
+      "allDet": [
+        "PERSON:רחל לוי ##-"
+      ]
+    },
+    {
+      "sentence": 1,
+      "text": "אלביט מערכות",
+      "type": "ORGANIZATION",
+      "allDet": [
+        "PERSON:רחל לוי ##-"
+      ]
+    },
+    {
+      "sentence": 6,
+      "text": "שיבא",
+      "type": "ORGANIZATION",
+      "allDet": [
+        "PERSON:משה פרידמן",
+        "LOCATION:בבית החולים שיבא",
+        "LOCATION:ברמת גן"
+      ]
+    },
+    {
+      "sentence": 7,
+      "text": "באר שבע",
+      "type": "LOCATION",
+      "allDet": [
+        "ORGANIZATION:בנק לאומי"
+      ]
+    },
+    {
+      "sentence": 8,
+      "text": "נועה בר-אילן",
+      "type": "PERSON",
+      "allDet": [
+        "PERSON:נועה בר ##-",
+        "LOCATION:ברחוב הרצל",
+        "LOCATION:בנתניה"
+      ]
+    },
+    {
+      "sentence": 11,
+      "text": "אוניברסיטת בן-גוריון בנגב",
+      "type": "ORGANIZATION",
+      "allDet": [
+        "PERSON:רון אשכנזי",
+        "ORGANIZATION:באוניברסיטת בן ##-",
+        "LOCATION:בנגב"
+      ]
+    },
+    {
+      "sentence": 16,
+      "text": "עיריית הרצליה",
+      "type": "ORGANIZATION",
+      "allDet": []
+    },
+    {
+      "sentence": 16,
+      "text": "גבי סמו",
+      "type": "PERSON",
+      "allDet": []
+    },
+    {
+      "sentence": 17,
+      "text": "יצחק נבון-לוי",
+      "type": "PERSON",
+      "allDet": [
+        "PERSON:יצחק נבון ##-",
+        "ORGANIZATION:אינטל",
+        "LOCATION:בקריית גת"
+      ]
+    },
+    {
+      "sentence": 18,
+      "text": "רמב\"ם",
+      "type": "ORGANIZATION",
+      "allDet": [
+        "PERSON:שלמה ביטון",
+        "LOCATION:רמב\"ם"
+      ]
+    }
+  ],
+  "perSentence": [
+    {
+      "text": "דוד כהן הגיש בקשה למשרד הפנים בירושלים.",
+      "inferMs": 1696,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "דוד כהן",
+          "raw": "PER",
+          "score": 0.9999
+        },
+        {
+          "type": "ORGANIZATION",
+          "surface": "למשרד הפנים",
+          "raw": "ORG",
+          "score": 0.9999
+        },
+        {
+          "type": "LOCATION",
+          "surface": "בירושלים",
+          "raw": "GPE",
+          "score": 0.9993
+        }
+      ]
+    },
+    {
+      "text": "עורכת הדין רחל לוי-אברמוביץ ייצגה את חברת אלביט מערכות בתיק האזרחי.",
+      "inferMs": 464,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "רחל לוי ##-",
+          "raw": "PER",
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "מר יוסף בן דוד עבר לגור בראשון לציון בשנה שעברה.",
+      "inferMs": 303,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "יוסף בן דוד",
+          "raw": "PER",
+          "score": 0.9999
+        },
+        {
+          "type": "LOCATION",
+          "surface": "בראשון לציון",
+          "raw": "GPE",
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "בנק הפועלים אישר את ההלוואה של מיכל שפירא מחיפה.",
+      "inferMs": 493,
+      "spans": [
+        {
+          "type": "ORGANIZATION",
+          "surface": "בנק הפועלים",
+          "raw": "ORG",
+          "score": 0.9999
+        },
+        {
+          "type": "PERSON",
+          "surface": "מיכל שפירא",
+          "raw": "PER",
+          "score": 0.9999
+        },
+        {
+          "type": "LOCATION",
+          "surface": "מחיפה",
+          "raw": "GPE",
+          "score": 0.9998
+        }
+      ]
+    },
+    {
+      "text": "הפגישה עם אבי רוזנברג תתקיים במשרדי טבע תעשיות פרמצבטיות בפתח תקווה.",
+      "inferMs": 319,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "אבי רוזנברג",
+          "raw": "PER",
+          "score": 0.9999
+        },
+        {
+          "type": "ORGANIZATION",
+          "surface": "טבע תעשיות פרמצבט",
+          "raw": "ORG",
+          "score": 0.9999
+        },
+        {
+          "type": "LOCATION",
+          "surface": "בפתח תקווה",
+          "raw": "GPE",
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "שרה גולדשטיין עובדת במשרד הבריאות בתל אביב.",
+      "inferMs": 295,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "שרה גולדשטיין",
+          "raw": "PER",
+          "score": 0.9999
+        },
+        {
+          "type": "ORGANIZATION",
+          "surface": "במשרד הבריאות",
+          "raw": "ORG",
+          "score": 0.9999
+        },
+        {
+          "type": "LOCATION",
+          "surface": "בתל אביב",
+          "raw": "GPE",
+          "score": 0.9994
+        }
+      ]
+    },
+    {
+      "text": "ד\"ר משה פרידמן ניתח את המטופלת בבית החולים שיבא ברמת גן.",
+      "inferMs": 311,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "משה פרידמן",
+          "raw": "PER",
+          "score": 0.9999
+        },
+        {
+          "type": "LOCATION",
+          "surface": "בבית החולים שיבא",
+          "raw": "FAC",
+          "score": 0.9856
+        },
+        {
+          "type": "LOCATION",
+          "surface": "ברמת גן",
+          "raw": "GPE",
+          "score": 0.9998
+        }
+      ]
+    },
+    {
+      "text": "נציגי בנק לאומי נפגשו עם ראש עיריית באר שבע.",
+      "inferMs": 321,
+      "spans": [
+        {
+          "type": "ORGANIZATION",
+          "surface": "בנק לאומי",
+          "raw": "ORG",
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "התובעת, גב' נועה בר-אילן, מתגוררת ברחוב הרצל בנתניה.",
+      "inferMs": 333,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "נועה בר ##-",
+          "raw": "PER",
+          "score": 0.9929
+        },
+        {
+          "type": "LOCATION",
+          "surface": "ברחוב הרצל",
+          "raw": "LOC",
+          "score": 0.9903
+        },
+        {
+          "type": "LOCATION",
+          "surface": "בנתניה",
+          "raw": "GPE",
+          "score": 0.9826
+        }
+      ]
+    },
+    {
+      "text": "אליהו מזרחי מונה למנכ\"ל חברת החשמל לישראל.",
+      "inferMs": 422,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "אליהו מזרחי",
+          "raw": "PER",
+          "score": 0.9999
+        },
+        {
+          "type": "ORGANIZATION",
+          "surface": "חברת החשמל לישראל",
+          "raw": "ORG",
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "המשטרה עצרה את יעקב אוחיון סמוך לצומת גולני בגליל התחתון.",
+      "inferMs": 370,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "יעקב אוחיון",
+          "raw": "PER",
+          "score": 0.9999
+        },
+        {
+          "type": "LOCATION",
+          "surface": "לצומת גולני",
+          "raw": "LOC",
+          "score": 0.9947
+        },
+        {
+          "type": "LOCATION",
+          "surface": "בגליל התחתון",
+          "raw": "LOC",
+          "score": 0.9996
+        }
+      ]
+    },
+    {
+      "text": "אחותו של רון אשכנזי לומדת באוניברסיטת בן-גוריון בנגב.",
+      "inferMs": 311,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "רון אשכנזי",
+          "raw": "PER",
+          "score": 0.9999
+        },
+        {
+          "type": "ORGANIZATION",
+          "surface": "באוניברסיטת בן ##-",
+          "raw": "ORG",
+          "score": 0.9999
+        },
+        {
+          "type": "LOCATION",
+          "surface": "בנגב",
+          "raw": "LOC",
+          "score": 0.9996
+        }
+      ]
+    },
+    {
+      "text": "חנה זילברמן פתחה חשבון בסניף בנק דיסקונט באשדוד.",
+      "inferMs": 274,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "חנה זילברמן",
+          "raw": "PER",
+          "score": 0.9999
+        },
+        {
+          "type": "ORGANIZATION",
+          "surface": "בנק דיסקונט",
+          "raw": "ORG",
+          "score": 0.9999
+        },
+        {
+          "type": "LOCATION",
+          "surface": "באשדוד",
+          "raw": "GPE",
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "לפי הדוח של רשות המסים, עמוס דהן חייב סכום גדול למדינה.",
+      "inferMs": 297,
+      "spans": [
+        {
+          "type": "ORGANIZATION",
+          "surface": "רשות המסים",
+          "raw": "ORG",
+          "score": 0.9999
+        },
+        {
+          "type": "PERSON",
+          "surface": "עמוס דהן",
+          "raw": "PER",
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "טליה אברהם ובעלה נפתלי עברו מקריית שמונה לכפר סבא.",
+      "inferMs": 274,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "טליה אברהם",
+          "raw": "PER",
+          "score": 0.9999
+        },
+        {
+          "type": "PERSON",
+          "surface": "נפתלי",
+          "raw": "PER",
+          "score": 0.9974
+        },
+        {
+          "type": "LOCATION",
+          "surface": "מקריית שמונה",
+          "raw": "GPE",
+          "score": 0.9999
+        },
+        {
+          "type": "LOCATION",
+          "surface": "לכפר סבא",
+          "raw": "GPE",
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "פרופ' עדינה שטרן מרצה בטכניון בחיפה.",
+      "inferMs": 269,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "עדינה שטרן",
+          "raw": "PER",
+          "score": 0.9999
+        },
+        {
+          "type": "ORGANIZATION",
+          "surface": "בטכניון",
+          "raw": "ORG",
+          "score": 0.9999
+        },
+        {
+          "type": "LOCATION",
+          "surface": "בחיפה",
+          "raw": "GPE",
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "עיריית הרצליה אישרה את התוכנית של האדריכל גבי סמו.",
+      "inferMs": 270,
+      "spans": []
+    },
+    {
+      "text": "יצחק נבון-לוי חתם על הסכם עם חברת אינטל בקריית גת.",
+      "inferMs": 289,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "יצחק נבון ##-",
+          "raw": "PER",
+          "score": 0.9999
+        },
+        {
+          "type": "ORGANIZATION",
+          "surface": "אינטל",
+          "raw": "ORG",
+          "score": 0.9999
+        },
+        {
+          "type": "LOCATION",
+          "surface": "בקריית גת",
+          "raw": "GPE",
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "אמו של שלמה ביטון מאושפזת בבית חולים רמב\"ם.",
+      "inferMs": 296,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "שלמה ביטון",
+          "raw": "PER",
+          "score": 0.9999
+        },
+        {
+          "type": "LOCATION",
+          "surface": "רמב\"ם",
+          "raw": "FAC",
+          "score": 0.6587
+        }
+      ]
+    },
+    {
+      "text": "מכבי תל אביב אירחה את הפועל ירושלים באצטדיון החדש.",
+      "inferMs": 278,
+      "spans": [
+        {
+          "type": "ORGANIZATION",
+          "surface": "מכבי תל אביב",
+          "raw": "ORG",
+          "score": 0.9999
+        },
+        {
+          "type": "ORGANIZATION",
+          "surface": "הפועל ירושלים",
+          "raw": "ORG",
+          "score": 0.9999
+        }
+      ]
+    },
+    {
+      "text": "רות עמר, תושבת עכו, הגישה תלונה נגד משרד התחבורה.",
+      "inferMs": 359,
+      "spans": [
+        {
+          "type": "PERSON",
+          "surface": "רות עמר",
+          "raw": "PER",
+          "score": 0.9999
+        },
+        {
+          "type": "LOCATION",
+          "surface": "עכו",
+          "raw": "GPE",
+          "score": 0.9999
+        },
+        {
+          "type": "ORGANIZATION",
+          "surface": "משרד התחבורה",
+          "raw": "ORG",
+          "score": 0.9999
+        }
+      ]
+    }
+  ]
+}

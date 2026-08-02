@@ -1,0 +1,24 @@
+# deps / build
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# the ~185MB model is fetched at runtime & cached by the browser — never commit it
+*.onnx
+models/
+
+# env / secrets
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+
+# scratch
+scratchpad/
+tmp/

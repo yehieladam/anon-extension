@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Hebrew PII Anonymizer (spike)",
+  "version": "0.0.1",
+  "description": "MV3 spike: Hebrew NER (dictabert-ner ONNX q8) running fully client-side in the popup. Text never leaves the device; the only network use is the one-time model download.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Hebrew PII Anonymizer (spike)"
+  },
+  "permissions": [],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co;"
+  }
+}

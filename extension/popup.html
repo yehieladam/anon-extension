@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Hebrew PII Anonymizer — MV3 spike</title>
+  <style>
+    :root {
+      --cream: #F7F4EF;
+      --butter: #F5E7A3;
+      --brown: #2C1608;
+      --border: #e2dcd2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      width: 640px;
+      margin: 0;
+      padding: 1.25rem;
+      background: var(--cream);
+      color: var(--brown);
+      font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+    }
+    h1 { font-size: 1.1rem; margin: 0 0 0.15rem; }
+    .subtitle { color: #7a6a5c; font-size: 0.8rem; margin: 0 0 1rem; }
+    .subtitle a { color: inherit; }
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      padding: 0.6rem 0.8rem;
+      font: inherit;
+      font-size: 0.95rem;
+      line-height: 1.7;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fff;
+      color: inherit;
+      resize: vertical;
+    }
+    textarea:focus { outline: 2px solid var(--butter); border-color: transparent; }
+    button {
+      margin-top: 0.6rem;
+      padding: 0.5rem 1.4rem;
+      font: inherit;
+      font-weight: 600;
+      border: none;
+      border-radius: 999px;
+      background: var(--brown);
+      color: var(--cream);
+      cursor: pointer;
+      min-height: 44px;
+      min-width: 44px;
+    }
+    button:disabled { opacity: 0.5; cursor: wait; }
+    #status { margin-top: 0.8rem; font-size: 0.85rem; min-height: 1.2em; }
+    #progress-wrap {
+      display: none;
+      margin-top: 0.4rem;
+      height: 8px;
+      border-radius: 4px;
+      background: #e9e3d8;
+      overflow: hidden;
+    }
+    #progress-bar {
+      height: 100%;
+      width: 0%;
+      background: var(--brown);
+      border-radius: 4px;
+      transition: width 0.15s linear;
+    }
+    #meta { display: none; margin-top: 1rem; font-size: 0.8rem; color: #5a4a3c; }
+    #meta .badge {
+      display: inline-block;
+      background: var(--butter);
+      border-radius: 999px;
+      padding: 0.1rem 0.6rem;
+      font-weight: 600;
+      color: var(--brown);
+      margin-inline-end: 0.5rem;
+    }
+    table {
+      width: 100%;
+      margin-top: 0.6rem;
+      border-collapse: collapse;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      font-size: 0.9rem;
+    }
+    th, td { padding: 0.4rem 0.8rem; text-align: right; border-bottom: 1px solid var(--border); }
+    tr:last-child td { border-bottom: none; }
+    th { background: #f1ece3; font-size: 0.75rem; letter-spacing: 0.03em; }
+    td.num { font-variant-numeric: tabular-nums; direction: ltr; text-align: left; }
+    .entity-tag {
+      display: inline-block;
+      background: var(--butter);
+      border-radius: 6px;
+      padding: 0.05rem 0.45rem;
+      font-weight: 600;
+      font-size: 0.75rem;
+      direction: ltr;
+    }
+    .empty { color: #7a6a5c; font-style: italic; margin-top: 0.6rem; }
+  </style>
+</head>
+<body>
+  <h1>Hebrew NER — MV3 spike</h1>
+  <p class="subtitle">
+    dictabert-ner (ONNX q8) via transformers.js, fully client-side.
+    First run downloads ~185 MB once — <a href="popup.html" target="_blank">open in a tab</a>
+    so the download is not cut off when the popup closes.
+  </p>
+
+  <textarea id="input" dir="rtl" lang="he" spellcheck="false">ביום שלישי נפגש דוד לוי עם נציגי בנק הפועלים בתל אביב.
+רונית כהן, מנכ"לית חברת טבע, הודיעה על מינוי חדש בסניף ירושלים.
+עורכת הדין יעל שפירא ייצגה את חברת אלביט מערכות בבית המשפט המחוזי בחיפה.
+משה בן דוד עובד במשרד האוצר מאז שנת 2019.
+אבי מזרחי טס מנתב"ג לניו יורק לפגישה עם נציגי גוגל.</textarea>
+
+  <button id="run-btn">Anonymize (detect entities)</button>
+
+  <div id="status"></div>
+  <div id="progress-wrap"><div id="progress-bar"></div></div>
+
+  <div id="meta">
+    <span class="badge" id="backend-badge"></span>
+    <span id="timing"></span>
+  </div>
+
+  <div id="results" dir="rtl"></div>
+
+  <!-- Classic script MUST run before the module below: it patches RegExp so
+       dictabert's tokenizer (which contains \" and \', illegal under the /u flag)
+       compiles in V8. Inline scripts are forbidden under MV3 CSP, hence a file. -->
+  <script src="shim.js"></script>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

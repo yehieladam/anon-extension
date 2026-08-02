@@ -1,0 +1,316 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hebrew NER in the Browser — PoC</title>
+<style>
+  :root {
+    --cream: #F7F4EF;
+    --butter: #F5E7A3;
+    --brown: #2C1608;
+    --border: #e2dcd2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem 1rem;
+    background: var(--cream);
+    color: var(--brown);
+    font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+  }
+  main { width: 100%; max-width: 760px; }
+  h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
+  .subtitle { color: #7a6a5c; font-size: 0.9rem; margin: 0 0 1.5rem; }
+  textarea {
+    width: 100%;
+    min-height: 140px;
+    padding: 0.75rem 1rem;
+    font: inherit;
+    font-size: 1rem;
+    line-height: 1.7;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+    color: inherit;
+    resize: vertical;
+  }
+  textarea:focus { outline: 2px solid var(--butter); border-color: transparent; }
+  button {
+    margin-top: 0.75rem;
+    padding: 0.6rem 1.6rem;
+    font: inherit;
+    font-weight: 600;
+    border: none;
+    border-radius: 999px;
+    background: var(--brown);
+    color: var(--cream);
+    cursor: pointer;
+    min-height: 44px;
+  }
+  button:disabled { opacity: 0.5; cursor: wait; }
+  #status { margin-top: 1rem; font-size: 0.9rem; min-height: 1.2em; }
+  #progress-wrap {
+    display: none;
+    margin-top: 0.5rem;
+    height: 8px;
+    border-radius: 4px;
+    background: #e9e3d8;
+    overflow: hidden;
+  }
+  #progress-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--brown);
+    border-radius: 4px;
+    transition: width 0.15s linear;
+  }
+  #meta {
+    display: none;
+    margin-top: 1.25rem;
+    font-size: 0.85rem;
+    color: #5a4a3c;
+  }
+  #meta .badge {
+    display: inline-block;
+    background: var(--butter);
+    border-radius: 999px;
+    padding: 0.15rem 0.7rem;
+    font-weight: 600;
+    color: var(--brown);
+    margin-inline-end: 0.5rem;
+  }
+  table {
+    width: 100%;
+    margin-top: 0.75rem;
+    border-collapse: collapse;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    font-size: 0.95rem;
+  }
+  th, td { padding: 0.5rem 0.9rem; text-align: right; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  th { background: #f1ece3; font-size: 0.8rem; letter-spacing: 0.03em; }
+  td.num { font-variant-numeric: tabular-nums; direction: ltr; text-align: left; }
+  .entity-tag {
+    display: inline-block;
+    background: var(--butter);
+    border-radius: 6px;
+    padding: 0.05rem 0.5rem;
+    font-weight: 600;
+    font-size: 0.8rem;
+    direction: ltr;
+  }
+  .empty { color: #7a6a5c; font-style: italic; margin-top: 0.75rem; }
+  #result-json { display: none; }
+</style>
+
+<main>
+  <h1>Hebrew NER in the Browser</h1>
+  <p class="subtitle">dictabert-ner (ONNX, q8) via transformers.js — runs fully client-side, no server.</p>
+
+  <textarea id="input" dir="rtl" lang="he" spellcheck="false">ביום שלישי נפגש דוד לוי עם נציגי בנק הפועלים בתל אביב.
+רונית כהן, מנכ"לית חברת טבע, הודיעה על מינוי חדש בסניף ירושלים.
+עורכת הדין יעל שפירא ייצגה את חברת אלביט מערכות בבית המשפט המחוזי בחיפה.
+משה בן דוד עובד במשרד האוצר מאז שנת 2019.
+אבי מזרחי טס מנתב"ג לניו יורק לפגישה עם נציגי גוגל.</textarea>
+
+  <button id="run-btn">Run NER</button>
+
+  <div id="status"></div>
+  <div id="progress-wrap"><div id="progress-bar"></div></div>
+
+  <div id="meta">
+    <span class="badge" id="backend-badge"></span>
+    <span id="timing"></span>
+  </div>
+
+  <div id="results" dir="rtl"></div>
+  <pre id="result-json"></pre>
+</main>
+
+<!-- Classic script runs BEFORE the deferred module below. Patches a tokenizer bug:
+     DICTA's dictabert pretokenizer regex contains \" and \' (Hebrew gershayim/geresh in
+     abbreviations like ח"פ, ת"ז). transformers.js compiles the pretokenizer with the `u`
+     (unicode) flag, under which \" and \' are "Invalid escape" -> V8 rejects the RegExp and
+     NER never runs. Non-special ASCII escapes are illegal only under /u; stripping the
+     backslash is semantically identical (the char matches itself). We touch ONLY u/v-flagged
+     patterns and ONLY the offending escapes, so no other regex behavior changes. -->
+<script>
+  (function () {
+    const OrigRegExp = RegExp;
+    // Backslash before an ASCII char that is NOT a valid RegExp escape and NOT a regex
+    // metacharacter -> illegal under /u. Strip the backslash (char matches itself).
+    const VALID_ESCAPE = /[dDwWsSbBnrtfv0xucpPkq\\/.*+?()[\]{}|^$]/;
+    function sanitize(pattern) {
+      return String(pattern).replace(/\\([\x00-\x7F])/g, (m, ch) =>
+        VALID_ESCAPE.test(ch) ? m : ch
+      );
+    }
+    function Patched(pattern, flags) {
+      if (typeof pattern === 'string' && typeof flags === 'string' && /[uv]/.test(flags)) {
+        try { return new OrigRegExp(pattern, flags); }
+        catch (e) { if (e instanceof SyntaxError) return new OrigRegExp(sanitize(pattern), flags); throw e; }
+      }
+      return new OrigRegExp(pattern, flags);
+    }
+    Patched.prototype = OrigRegExp.prototype;
+    Object.getOwnPropertyNames(OrigRegExp).forEach((k) => {
+      try { if (!(k in Patched)) Patched[k] = OrigRegExp[k]; } catch (e) {}
+    });
+    // eslint-disable-next-line no-global-assign
+    RegExp = Patched;
+  })();
+</script>
+
+<script type="module">
+  import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0';
+
+  const MODEL_ID = 'onnx-community/dictabert-ner-ONNX';
+  const DTYPE = 'q8'; // int8 quantized -> onnx/model_quantized.onnx (~185 MB)
+
+  const el = (id) => document.getElementById(id);
+  const statusEl = el('status');
+  const progressWrap = el('progress-wrap');
+  const progressBar = el('progress-bar');
+
+  // ---- model loading (lazy singleton, WebGPU -> WASM fallback) ----
+
+  let pipePromise = null;
+  let backend = null;
+  let loadMs = 0;
+
+  const fileProgress = new Map(); // file -> { loaded, total }
+
+  function onProgress(evt) {
+    if (evt.status === 'progress' && evt.file) {
+      fileProgress.set(evt.file, { loaded: evt.loaded || 0, total: evt.total || 0 });
+      let loaded = 0, total = 0;
+      for (const p of fileProgress.values()) { loaded += p.loaded; total += p.total; }
+      if (total > 0) {
+        const pct = Math.min(100, (loaded / total) * 100);
+        progressWrap.style.display = 'block';
+        progressBar.style.width = pct.toFixed(1) + '%';
+        statusEl.textContent =
+          'Downloading model… ' + (loaded / 1e6).toFixed(0) + ' / ' + (total / 1e6).toFixed(0) + ' MB';
+      }
+    } else if (evt.status === 'ready') {
+      progressWrap.style.display = 'none';
+    }
+  }
+
+  async function createPipeline(device) {
+    return pipeline('token-classification', MODEL_ID, {
+      device,
+      dtype: DTYPE,
+      progress_callback: onProgress,
+    });
+  }
+
+  function getPipeline() {
+    if (!pipePromise) {
+      pipePromise = (async () => {
+        const t0 = performance.now();
+        let pipe;
+        if (navigator.gpu) {
+          try {
+            statusEl.textContent = 'Loading model (WebGPU)…';
+            pipe = await createPipeline('webgpu');
+            backend = 'webgpu';
+          } catch (err) {
+            console.warn('WebGPU init failed, falling back to WASM:', err);
+          }
+        }
+        if (!pipe) {
+          statusEl.textContent = 'Loading model (WASM)…';
+          pipe = await createPipeline('wasm');
+          backend = 'wasm';
+        }
+        loadMs = Math.round(performance.now() - t0);
+        progressWrap.style.display = 'none';
+        statusEl.textContent = 'Model ready (' + backend + ', load ' + loadMs + ' ms).';
+        return pipe;
+      })().catch((err) => {
+        pipePromise = null; // allow retry
+        throw err;
+      });
+    }
+    return pipePromise;
+  }
+
+  // ---- inference ----
+
+  async function runNer(text) {
+    const ner = await getPipeline();
+    const t0 = performance.now();
+    const output = await ner(text, { aggregation_strategy: 'simple' });
+    const inferMs = Math.round(performance.now() - t0);
+
+    const spans = output.map((s) => ({
+      entity_group: s.entity_group,
+      word: s.word,
+      score: Number(s.score.toFixed(4)),
+      start: s.start ?? null,
+      end: s.end ?? null,
+    }));
+
+    const result = { backend, loadMs, inferMs, spans };
+
+    // Expose for headless harnesses.
+    window.__NER_RESULT = result;
+    el('result-json').textContent = JSON.stringify(result);
+
+    return result;
+  }
+  window.runNer = runNer;
+
+  // ---- UI ----
+
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function renderResult(result) {
+    el('backend-badge').textContent = result.backend.toUpperCase();
+    el('timing').textContent =
+      'Model load: ' + result.loadMs + ' ms (one-time) · Inference: ' + result.inferMs + ' ms · ' +
+      result.spans.length + ' spans';
+    el('meta').style.display = 'block';
+
+    const resultsEl = el('results');
+    if (result.spans.length === 0) {
+      resultsEl.innerHTML = '<p class="empty">No entities detected.</p>';
+      return;
+    }
+    const rows = result.spans.map((s) =>
+      '<tr>' +
+      '<td><span class="entity-tag">' + escapeHtml(s.entity_group) + '</span></td>' +
+      '<td>' + escapeHtml(s.word) + '</td>' +
+      '<td class="num">' + s.score.toFixed(3) + '</td>' +
+      '</tr>'
+    ).join('');
+    resultsEl.innerHTML =
+      '<table><thead><tr><th>entity_group</th><th>word</th><th>score</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table>';
+  }
+
+  const runBtn = el('run-btn');
+  runBtn.addEventListener('click', async () => {
+    const text = el('input').value.trim();
+    if (!text) return;
+    runBtn.disabled = true;
+    try {
+      const result = await runNer(text);
+      renderResult(result);
+      statusEl.textContent = 'Done (' + result.backend + ').';
+    } catch (err) {
+      console.error(err);
+      statusEl.textContent = 'Error: ' + (err && err.message ? err.message : String(err));
+    } finally {
+      runBtn.disabled = false;
+    }
+  });
+
+  window.__POC_READY = true;
+</script>
