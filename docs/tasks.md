@@ -60,15 +60,22 @@ unit test with the same valid/invalid cases the server checks use.
 - [ ] **P1-12** `resolve.ts` — overlap resolution (PRIORITY map, deterministic > NER)
   Owner: unassigned
   DoD: port of server `analyze.py` `PRIORITY` + greedy keep-strongest; tests for ID-inside-NER-span and adjacent-span cases; output non-overlapping, reading order.
-- [ ] **P1-13** `anonymize.ts` — typed Hebrew placeholders (`[שם_1]`, `[ת"ז_1]`), consistent per surface value
+- [ ] **P1-13** `anonymize.ts` — typed Hebrew placeholders, **LLM-round-trip-safe alphabet**, consistent per surface value
   Owner: unassigned
-  DoD: port of server `anonymize.py`; same value → same placeholder; numbering in reading order; tests.
-- [ ] **P1-14** `key.ts` — reversible mapping rows + CSV serialization (restore-compatible)
+  Scope (Fable 5): **do NOT use ASCII `"` in placeholders** — `[ת"ז_1]` gets smart-quoted by ChatGPT/Word (`”`, U+05F4 `״`) and silently breaks restore. Emit gershayim U+05F4 (`[ת״ז_1]`) or quote-free (`[תז_1]`). Consistency map keyed on `(NFC-normalized + trimmed + whitespace-collapsed + quote-unified value, type)`; deterministic numbering by first appearance in reading order; the SAME map instance shared across text/PDF/docx handlers (engine invariant).
+  DoD: port of server `anonymize.py` with the safe alphabet; same value → same placeholder across surfaces; numbering in reading order; tests incl. curly-apostrophe twins (`ג'ורג'`).
+- [ ] **P1-14** `key.ts` — canonical `key.v1` JSON + CSV export (restore-compatible)
   Owner: unassigned
-  DoD: KeyRow[] → CSV and back, lossless round-trip test; format matches the server key CSV columns.
-- [ ] **P1-15** `restore.ts` — placeholders → originals using the key (**MVP** — see decision note above)
+  Scope (Fable 5): canonical = versioned JSON `{version, createdAt, docId: SHA-256(source), scheme, rows:[{placeholder,type,value,count}]}`; `docId` lets restore warn "key belongs to a different document". CSV = RFC-4180-quoted + UTF-8 BOM as the human/Excel export (bare CSV breaks on Hebrew values with commas/quotes/newlines).
+  DoD: JSON + CSV round-trip lossless incl. Hebrew punctuation; docId mismatch surfaced; columns documented.
+- [ ] **P1-15** `restore.ts` — tolerant placeholders → originals (**MVP** — see decision note above)
   Owner: unassigned
-  DoD: restore(anonymize(text)) === text property test on synthetic docs; handles repeated placeholders and missing-key errors explicitly.
+  Scope (Fable 5): tolerant matcher — NFC normalize, quote-variant class (`" ” ״ ׳ '`), optional whitespace, and **strip Unicode bidi controls** (LRM/RLM U+200E/F, FSI/PDI U+2066–2069) that LLMs/RTL editors inject invisibly. Unmatched placeholders → listed report, never silent. Source that already looks like a placeholder → warn before anonymizing.
+  DoD: restore(anonymize(text)) === text property test; **property tests on recorded real ChatGPT/Claude replies** containing placeholders; repeated + missing-key handled explicitly.
+- [ ] **KEY-01** Optional passphrase encryption of the key file (key-at-rest)
+  Owner: unassigned
+  Scope (Fable 5): Argon2id via `hash-wasm` (MIT, tiny) → AES-256-GCM via native WebCrypto (zero added bytes); envelope `{v, kdf:{argon2id params,salt}, nonce, ciphertext}`; PBKDF2 ≥600k iters as zero-dep fallback. `crypto.subtle` works in workers/Node20 → stays framework-free. Default remains in-memory (dies with the tab); download + encryption are explicit user actions. Marketing: "your restore vault is a file only you hold — we never saw it."
+  DoD: encrypt/decrypt round-trip with passphrase; wrong passphrase fails cleanly; engine unit-tested headless.
 
 ## P2W — web app (public front door, ships first — see CLAUDE.md decision 2026-08-02)
 
@@ -164,7 +171,11 @@ achievable on BAI infra, NER falls back to `numThreads=1` (works, just slower) �
   AGPL-compatible license** (option a) — satisfies MuPDF's network-use copyleft, aligns with TR-04,
   and *strengthens* the trust story for lawyers ("read the code — nothing is uploaded"). No Artifex
   commercial license needed. Still confirm dictabert-ner + ONNX conversion terms allow redistribution.
-  DoD: LICENSE (AGPL-compatible) added; per-artifact confirmation in `docs/`; blockers escalated before submission.
+  Also: tesseract.js + `heb` tessdata_best (Apache-2.0, OK); hash-wasm (MIT). **Record the OCR-alternative
+  rejection rationale (Fable 5)** so it isn't relitigated: PaddleOCR & EasyOCR have no Hebrew model;
+  Surya has no WASM path + revenue-capped weights (Open Rail-M); no printed-Hebrew TrOCR checkpoint
+  exists; DICTA ships no OCR models. Tesseract is the only client-side Hebrew OCR in 2026.
+  DoD: LICENSE (AGPL-compatible) added; per-artifact confirmation in `docs/`; OCR rationale noted; blockers escalated before submission.
 - [ ] **P5-04** Data-safety form ("no data collected") + submit + iterate on review
   Owner: unassigned
   DoD: extension published or review feedback triaged into tasks.
@@ -198,6 +209,10 @@ especially a risk-averse Israeli lawyer — can verify. This is the moat vs comp
 - [ ] **TR-05** Independent third-party security audit, report published (LATER)
   Owner: unassigned
   DoD: audit performed; report linked from the site.
+- [ ] **TR-06** "We publish our misses" page — measured numbers (Fable 5)
+  Owner: unassigned
+  Scope: publish real measured recall — NER recall vs `ner_testset.json`, and OCR recall per scan-quality tier (from OCR-01). "We publish our misses" is a trust weapon no server competitor will match, and it enforces the "real detection only" honesty.
+  DoD: page live with current numbers; updated when the engine/model changes.
 
 ## P6 — PDF (IN v1 — decision 2026-08-03; unified launch, spike-gated)
 
@@ -208,28 +223,58 @@ is **Hebrew OCR accuracy on scans**, not feasibility. Why not the existing VPS t
 to a server = PII leaves the device = breaks the whole promise; the VPS tool is a separate server-side
 product, not this client-side one.
 
-**Engine/DOM boundary:** `mupdf.js` is pure WASM → lives in `engine/`. OCR page rendering may need
-Canvas/OffscreenCanvas (DOM) → keep that in the app layer; the engine receives text + coordinates.
+**Engine/DOM boundary:** `mupdf.js` is pure WASM → lives in `engine/`. Fable 5: mupdf renders page
+pixmaps in pure WASM, so it can both feed tesseract AND destroy image pixels — the whole scanned
+pipeline can likely stay in `engine/` with **no Canvas/DOM**. Verify in PDF-01/02.
 
-**Non-negotiable acceptance test:** after redaction, extract text from the OUTPUT PDF — if any PII
-remains, it FAILS. Never a black box over live text.
+**⚠️ CRITICAL — never incremental-save (Fable 5).** The official mupdfjs redaction example saves
+`incremental`, which APPENDS and leaves the pre-redaction objects physically recoverable in the file
+(multiple-`%%EOF` attack). Redacted output MUST be a full rewrite with garbage collection
+(`garbage`/`compress` save options), never incremental.
+
+**Non-negotiable acceptance test — THREE layers (Fable 5), enforced in code + CI on every output:**
+1. structured text re-extract → no PII;
+2. **raw-byte scan** of the output file for PII strings — check UTF-8, UTF-16, and reversed
+   visual-order byte forms (catches incremental leftovers, metadata, ToUnicode strings);
+3. file-structure check: single `%%EOF`, no prior object generations.
+Never a black box over live text.
 
 - [ ] **PDF-01** Feasibility spike: `mupdf.js` `applyRedactions()` on a real Hebrew PDF (GO/NO-GO gate)
   Owner: unassigned
-  Scope: load a Hebrew text PDF via mupdf.js, mark PII rects from detections, `applyRedactions()`, save; run the acceptance test (extract text from output → PII gone). Measure WASM size + per-page time. Re-check the server's word-run/box-fitting lessons (memories `pdf-inplace-redaction-requirement`, `pdf-redaction-precise-matching`) — mupdf likely handles what PyMuPDF did.
-  DoD: written GO/NO-GO + demo; acceptance test passes; size/perf recorded. NO-GO fallback: anonymized text/DOCX output (never server).
-- [ ] **PDF-02** Feasibility spike: `tesseract.js` Hebrew OCR accuracy on scanned legal PDFs (GO/NO-GO gate)
+  Scope: load a Hebrew text PDF via mupdf.js, mark PII rects, `applyRedactions(blackBoxes, REDACT_IMAGE_PIXELS, …, REDACT_TEXT_REMOVE)`, **save full-rewrite + garbage (NOT incremental)**; run the 3-layer acceptance test. Include a masked/transparent-image fixture (upstream PyMuPDF segfault class, issue #434). Measure WASM size + per-page time.
+  DoD: GO/NO-GO + demo; 3-layer test passes incl. masked-image fixture; size/perf recorded. NO-GO fallback: anonymized text/DOCX output (never server).
+- [ ] **PDF-02** Feasibility spike: `tesseract.js` Hebrew OCR (GO/NO-GO gate) — use `tessdata_best` `heb`
   Owner: unassigned
-  Scope: OCR a set of synthetic scanned Hebrew pages; measure recall of text (and thus of PII the recognizers can then catch); weigh traineddata size + speed. Redaction on a scan = paint over image regions at OCR boxes.
-  DoD: written GO/NO-GO + accuracy number; UI honesty note drafted ("scanned = accuracy depends on scan quality"); size/perf recorded.
-- [ ] **PDF-03** PDF text extraction + bidi reorder (Hebrew reading order) via `mupdf.js`
+  Scope: OCR synthetic scanned Hebrew pages; confirm mupdf pixmap → tesseract works with no Canvas; spike PSM 4/6, `preserve_interword_spaces`, dictionary on/off (legal names are out-of-dictionary — the dawg can "correct" a real name into a wrong one). Feeds OCR-01 harness.
+  DoD: GO/NO-GO; confirms no-Canvas path; knob findings recorded.
+- [ ] **PDF-03** PDF text extraction + bidi mapping (Hebrew reading order) via `mupdf.js`
   Owner: unassigned
-  DoD: text + positions extracted; Hebrew reading order correct on a mixed RTL/LTR sample; feeds the recognizers + NER unchanged.
-- [ ] **PDF-04** PDF redaction output pipeline: detections → rects → `applyRedactions()` → downloadable redacted PDF
+  Scope (Fable 5): MuPDF Hebrew extraction is known-treacherous (reversed runs, ligatures — PyMuPDF #2199). **Never map detections back by string-searching reordered text** — keep a per-character index map (logical-order text ↔ stext chars) and derive redaction rects from each span's **glyph quads**.
+  DoD: text + positions extracted; **mixed RTL/LTR + digits fixture** (LTR runs inside RTL lines) redacts at correct rects; feeds recognizers + NER unchanged.
+- [ ] **PDF-04** PDF redaction output pipeline: detections → glyph-quad rects → `applyRedactions()` → redacted PDF
   Owner: unassigned
-  Scope: depends on PDF-01 GO. Same-value/consistent handling as the text flow; passes the acceptance test on every output.
-  DoD: real Hebrew PDF in → truly redacted PDF out; acceptance test enforced in code (self-verify: re-extract, assert no PII); RTL correct.
-- [ ] **PDF-05** Scanned-PDF (OCR) redaction pipeline: `tesseract.js` → boxes → paint-over → output
+  Scope: depends on PDF-01 GO. Full-rewrite+garbage save; consistent-value handling as the text flow.
+  DoD: real Hebrew PDF in → truly redacted PDF out; **3-layer acceptance test enforced in code** (self-verify, assert no PII); RTL correct.
+- [ ] **PDF-05** Scanned-PDF (OCR) redaction: `tesseract.js` boxes → `applyRedactions(REDACT_IMAGE_PIXELS)` → output
   Owner: unassigned
-  Scope: depends on PDF-02 GO. Honesty in UI about OCR-dependent accuracy.
-  DoD: scanned Hebrew PDF in → redacted output; missed-text caveat surfaced to the user.
+  Scope (Fable 5): **do NOT canvas-paint-over** — place redact annotations over OCR boxes and let mupdf destroy the embedded scan's pixels (true removal, stays in WASM). Verify by **re-OCR of the redacted region** (assert no text). Honesty in UI re OCR-dependent accuracy.
+  DoD: scanned Hebrew PDF in → redacted output; re-OCR of redacted regions finds nothing; missed-text caveat surfaced.
+- [ ] **PDF-06** PDF sanitize pass — metadata & non-visible leak channels (Fable 5)
+  Owner: unassigned
+  Scope: redaction ≠ sanitization. Strip/clean: Info dict + **XMP metadata**, embedded files/attachments, annotation contents, form field values, **bookmarks/outlines** (often carry party names in legal PDFs), image EXIF/XMP.
+  DoD: raw-byte scan of output finds none of the above; unit fixtures per channel.
+
+## OCR — Hebrew accuracy & honesty (Fable 5; extends P6, gates scan mode)
+
+- [ ] **OCR-01** Hebrew OCR recall harness (hard GO/NO-GO gate for scan mode)
+  Owner: unassigned
+  Scope: synthetic Hebrew legal-style pages with **planted synthetic PII** → rasterize at 150/300 DPI with noise/skew/JPEG → OCR → score TWO numbers per quality tier: char accuracy AND **end-to-end PII recall** (planted entities the full engine still catches). 300 DPI is the floor; 92–96% is clean-print only — poor scans drop hard, and every miss = leak.
+  DoD: published numbers per scan-quality tier; threshold set below which scan redaction is refused.
+- [ ] **OCR-02** Pure-TS in-engine preprocessing (adopt only what measurably lifts OCR-01 recall)
+  Owner: unassigned
+  Scope: grayscale → Otsu binarization → deskew (projection profile) → upscale to ≥300 DPI-equivalent, operating on RGBA buffers (no OpenCV.js needed) — framework-free, in `engine/`.
+  DoD: each step kept only if it improves the OCR-01 number; measured deltas recorded.
+- [ ] **OCR-03** Confidence surfacing + honest refusal
+  Owner: unassigned
+  Scope: per-word tesseract confidence → page-level trust indicator + review UI; below the OCR-01 threshold show "we cannot reliably redact this scan" (the "real detection only" rule applied to OCR). Ties to the TR honesty story.
+  DoD: confidence visible; refusal path works; wording reviewed.
