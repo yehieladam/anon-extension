@@ -157,9 +157,14 @@ achievable on BAI infra, NER falls back to `numThreads=1` (works, just slower) �
 - [ ] **P5-02** Listing assets: name, icons, RTL-correct Hebrew screenshots, descriptions (he+en), promo tile
   Owner: unassigned
   DoD: assets reviewed by both devs; first-load 185 MB download expectation stated in the listing.
-- [ ] **P5-03** Verify third-party licenses for public launch (dictabert-ner, its ONNX conversion, transformers.js Apache-2.0)
+- [ ] **P5-03** Verify third-party licenses for public launch
   Owner: unassigned
-  DoD: written confirmation per artifact in `docs/`; blockers escalated before submission.
+  Scope: dictabert-ner + its ONNX conversion; transformers.js (Apache-2.0); tesseract.js (Apache-2.0);
+  **`mupdf.js` — AGPL-3.0 ⚠️**. AGPL is copyleft with a network-use clause: a public web app using it
+  must offer its source to users. Decide NOW: (a) open-source the web app under an AGPL-compatible
+  license (aligns with TR-04), or (b) obtain an Artifex commercial MuPDF license. This is a launch
+  blocker for a commercially-hosted BAI tool — resolve before building on mupdf.js.
+  DoD: written confirmation per artifact in `docs/`; MuPDF license path chosen and documented; blockers escalated before submission.
 - [ ] **P5-04** Data-safety form ("no data collected") + submit + iterate on review
   Owner: unassigned
   DoD: extension published or review feedback triaged into tasks.
@@ -194,13 +199,37 @@ especially a risk-averse Israeli lawyer — can verify. This is the moat vs comp
   Owner: unassigned
   DoD: audit performed; report linked from the site.
 
-## Separate track — PDF in-place redaction spike (own timeline, NOT coupled to MVP)
+## P6 — PDF (IN v1 — decision 2026-08-03; unified launch, spike-gated)
 
-- [ ] **PDF-01** Research spike: pdf-lib true in-place redaction feasibility in the browser
+PDF is the format lawyers actually use, so v1 ships it. The enabler: **`mupdf.js`** — the WASM build
+of MuPDF (the same engine behind the server's PyMuPDF), whose `page.applyRedactions()` does **true
+content removal in the browser, zero server**. Scanned PDFs use **`tesseract.js`** OCR. The open risk
+is **Hebrew OCR accuracy on scans**, not feasibility. Why not the existing VPS tool: uploading the PDF
+to a server = PII leaves the device = breaks the whole promise; the VPS tool is a separate server-side
+product, not this client-side one.
+
+**Engine/DOM boundary:** `mupdf.js` is pure WASM → lives in `engine/`. OCR page rendering may need
+Canvas/OffscreenCanvas (DOM) → keep that in the app layer; the engine receives text + coordinates.
+
+**Non-negotiable acceptance test:** after redaction, extract text from the OUTPUT PDF — if any PII
+remains, it FAILS. Never a black box over live text.
+
+- [ ] **PDF-01** Feasibility spike: `mupdf.js` `applyRedactions()` on a real Hebrew PDF (GO/NO-GO gate)
   Owner: unassigned
-  Scope: re-examine the server's hard-won word-run matching + box-fitting logic (memories `pdf-inplace-redaction-requirement`, `pdf-redaction-precise-matching`); treat as research-risk, not a feature ticket.
-  DoD: written GO/NO-GO with a demo or a documented dead end.
-- [ ] **PDF-02** Research spike: in-browser OCR for scanned PDFs (GO/NO-GO)
+  Scope: load a Hebrew text PDF via mupdf.js, mark PII rects from detections, `applyRedactions()`, save; run the acceptance test (extract text from output → PII gone). Measure WASM size + per-page time. Re-check the server's word-run/box-fitting lessons (memories `pdf-inplace-redaction-requirement`, `pdf-redaction-precise-matching`) — mupdf likely handles what PyMuPDF did.
+  DoD: written GO/NO-GO + demo; acceptance test passes; size/perf recorded. NO-GO fallback: anonymized text/DOCX output (never server).
+- [ ] **PDF-02** Feasibility spike: `tesseract.js` Hebrew OCR accuracy on scanned legal PDFs (GO/NO-GO gate)
   Owner: unassigned
-  Scope: competitors (anonym.legal) OCR scanned PDFs — a real need for legal docs. Assess a client-side OCR path (e.g. Tesseract.js) with Hebrew; weigh model/size/accuracy cost against value. Research-risk, not a feature ticket.
-  DoD: written GO/NO-GO with a demo or a documented dead end.
+  Scope: OCR a set of synthetic scanned Hebrew pages; measure recall of text (and thus of PII the recognizers can then catch); weigh traineddata size + speed. Redaction on a scan = paint over image regions at OCR boxes.
+  DoD: written GO/NO-GO + accuracy number; UI honesty note drafted ("scanned = accuracy depends on scan quality"); size/perf recorded.
+- [ ] **PDF-03** PDF text extraction + bidi reorder (Hebrew reading order) via `mupdf.js`
+  Owner: unassigned
+  DoD: text + positions extracted; Hebrew reading order correct on a mixed RTL/LTR sample; feeds the recognizers + NER unchanged.
+- [ ] **PDF-04** PDF redaction output pipeline: detections → rects → `applyRedactions()` → downloadable redacted PDF
+  Owner: unassigned
+  Scope: depends on PDF-01 GO. Same-value/consistent handling as the text flow; passes the acceptance test on every output.
+  DoD: real Hebrew PDF in → truly redacted PDF out; acceptance test enforced in code (self-verify: re-extract, assert no PII); RTL correct.
+- [ ] **PDF-05** Scanned-PDF (OCR) redaction pipeline: `tesseract.js` → boxes → paint-over → output
+  Owner: unassigned
+  Scope: depends on PDF-02 GO. Honesty in UI about OCR-dependent accuracy.
+  DoD: scanned Hebrew PDF in → redacted output; missed-text caveat surfaced to the user.
