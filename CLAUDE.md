@@ -7,8 +7,32 @@
 
 A **fully client-side** Hebrew PII anonymizer that runs entirely in the user's browser — detection,
 anonymization, and restore all happen locally, **no server, no account, PII never leaves the device**.
-Shipped first as a **public Chrome extension** (popup), later as a public web app that reuses the same
-engine. The privacy-by-architecture story IS the product.
+Shipped first as a **public web app** (zero-install front door — best reach for a free tool, no Store
+review gate, and it can run `crossOriginIsolated` for multi-threaded WASM), with a **Chrome extension
+as a fast-follow** (always-on popup + select-text on any page; the web app links out to the Web Store
+to install it). **Both reuse the same framework-free engine** — this ordering is a go-to-market choice,
+not a technical one. The privacy-by-architecture story IS the product.
+
+> **Decision (2026-08-02): web app first, extension fast-follow.** Supersedes the earlier
+> "extension first" wording. Rationale in `docs/differentiation.md`. The MV3 spike stays loadable
+> (S-01) as the proof it works under extension constraints; it is not retired by this change.
+>
+> **Decision (2026-08-03): delivery + owners + web-app stack.** The web interface is a **standalone
+> Vite/React app** deployed as its **own Vercel project** on a **dedicated subdomain**
+> (`anon.bai-solutions…`), cross-linked from the public BAI site (a Next.js/Vercel site), with a link
+> to install the extension (CWS). Dedicated subdomain = clean `crossOriginIsolated` (multi-threaded
+> WASM) and zero analytics/telemetry on that origin (a trust requirement — see `docs/trust.md`).
+> The **NER model is self-hosted** (served same-origin/CDN with COOP/COEP-compatible CORP headers,
+> aggressively cached) — brings P4-02 forward. Owners: **@yehieladam → web app (P2W)**,
+> **@nadavnbs → extension (P2, P5)**. Embedding/isolation details in P2W-06.
+>
+> **Decision (2026-08-03): PDF + OCR are IN v1; single unified launch.** No early text-only launch —
+> v1 ships everything together including PDF redaction and scanned-PDF OCR (see the File-parsing note
+> above and the PDF track in `docs/tasks.md`). Gated by the PDF feasibility spike.
+>
+> **Decision (2026-08-03): the web app is open source (AGPL-compatible).** Required by `mupdf.js`
+> (AGPL-3.0) and embraced as a trust asset ("read the code — nothing is uploaded"). No commercial
+> MuPDF license. See P5-03 / `docs/trust.md` (TR-04).
 
 This is the client-side track. A separate server-side tool (Python/Streamlit/Presidio, in another
 repo, deployed to the BAI portal) already exists and is NOT part of this repo.
@@ -34,7 +58,13 @@ tasks. Both rely on Claude to write most of the code. Explain what you do in pla
   integrated GPUs — proven in Phase 0), WebGPU opportunistic.
 - **Extension UI (`extension/`):** React 18 + **Vite** + Tailwind, built for **Manifest V3** via
   `@crxjs/vite-plugin`. The UI is a thin shell that imports `engine/`.
-- **File parsing:** `mammoth` (docx), `xlsx`/SheetJS (xlsx). PDF is OUT of the MVP (its own hard spike).
+- **File parsing:** `mammoth` (docx), `xlsx`/SheetJS (xlsx). **PDF is IN v1** (decision 2026-08-03,
+  supersedes the earlier "PDF OUT of MVP") — via **`mupdf.js`** (the WASM build of MuPDF, the same
+  engine behind the server's PyMuPDF; `page.applyRedactions()` does true content removal in the
+  browser, zero server) and **`tesseract.js`** for scanned-PDF OCR (Hebrew accuracy is the open risk,
+  not feasibility). Gated by a feasibility spike (PDF-01/PDF-02) that must return GO and pass the
+  redaction acceptance test (extract text from the output PDF → PII must be gone). Fallback if NO-GO:
+  anonymized text/DOCX output — never a server round-trip.
 - **Tests:** **Vitest**. **Lint/format:** ESLint (typescript-eslint) + Prettier. **CI:** GitHub Actions.
 
 Do not add a dependency without a reason. Prefer the platform + these libs over new packages.
