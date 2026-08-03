@@ -19,7 +19,19 @@ const SAMPLE_TEXT = [
 
 const MB = 1e6;
 
+// A popup closes the instant you click outside it, which aborts an in-flight 189 MB model
+// download. The stopgap the spike used: reopen the same page as a full tab. The ?tab marker
+// lets that tab hide the link instead of offering to reopen itself.
+// P4-01 (offscreen document) and prefetch-on-install are the real fixes.
+const TAB_MARKER = "tab";
+const POPUP_PATH = "src/popup/index.html";
+
+function isRunningInTab(): boolean {
+  return new URLSearchParams(window.location.search).has(TAB_MARKER);
+}
+
 export function App() {
+  const inTab = isRunningInTab();
   const [text, setText] = useState(SAMPLE_TEXT);
   const [status, setStatus] = useState("Idle.");
   const [progressPct, setProgressPct] = useState<number | null>(null);
@@ -62,7 +74,23 @@ export function App() {
       </h1>
       <p dir="ltr" className="mt-1 text-xs opacity-70">
         dictabert-ner (ONNX q8) via transformers.js, fully client-side. First run downloads
-        ~185 MB once.
+        ~185 MB once
+        {inTab ? (
+          "."
+        ) : (
+          <>
+            {" — "}
+            <a
+              className="underline"
+              target="_blank"
+              rel="noreferrer"
+              href={chrome.runtime.getURL(`${POPUP_PATH}?${TAB_MARKER}`)}
+            >
+              open in a tab
+            </a>{" "}
+            so the download is not cut off when the popup closes.
+          </>
+        )}
       </p>
 
       <textarea
