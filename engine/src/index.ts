@@ -19,6 +19,11 @@ export { PRIORITY } from "./types";
 
 export { isValidIsraeliId, israeliIdRecognizer } from "./recognizers/israeliId";
 
+// Must be called before any transformers.js pipeline is created, or the dictabert
+// pretokenizer regex fails to compile under /u and NER never runs (P1-11 will call it
+// from ner.ts; until then the extension shell calls it directly).
+export { installTokenizerShim, isTokenizerShimInstalled } from "./tokenizerShim";
+
 // TODO(P1-03): export israeliPhoneRecognizer from "./recognizers/israeliPhone"
 // TODO(P1-04): export israeliCompanyRecognizer from "./recognizers/israeliCompany"
 // TODO(P1-05): export israeliIbanRecognizer from "./recognizers/israeliIban"

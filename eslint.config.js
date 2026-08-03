@@ -12,6 +12,9 @@ export default tseslint.config(
       "extension/**",
       // Phase-0 reference artifacts, not product code.
       "browser-poc/**",
+      // Third-party onnxruntime-web runtime, copied out of node_modules at build time by
+      // the copyOrtRuntime plugin in vite.config.ts — vendor code, never ours to lint.
+      "public/ort/**",
       "dist/**",
       "node_modules/**",
     ],

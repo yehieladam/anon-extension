@@ -72,10 +72,35 @@ unit test with the same valid/invalid cases the server checks use.
 
 ## P2 — popup UX (React shell in `src/`, imports `@engine/*`)
 
-- [ ] **P2-01** Migrate the spike into the Vite/crxjs build (retire `extension/` as the loadable)
-  Owner: unassigned
+- [x] **P2-01** Migrate the spike into the Vite/crxjs build (retire `extension/` as the loadable)
+  Owner: nadavnbs (`feat/p2-01-vite-build`)
   Scope: vendor onnxruntime `.mjs`+`.wasm` into the built output, `wasmPaths` override, `numThreads=1`, CSP `'wasm-unsafe-eval'` + `connect-src` (plan §3) — the spike stays untouched until this build is verified load-unpacked in Chrome.
   DoD: `npm run build` output loads unpacked; NER runs; spike parity confirmed; then `extension/` may be archived.
+  **Result (2026-08-03): PASS.** `dist/` loads unpacked; on the spike's 5-line sample it
+  returns **19/19 spans identical** to the S-01 baseline (tag, surface, score to 3dp), with
+  0 console errors, 0 failed requests, and 0 network requests on a warm reopen (load 712 ms,
+  inference 363 ms — matches the spike's 741/379). Plan: `docs/plans/p2-01-vite-build-migration.md`.
+  Three things worth carrying forward:
+  - **Latent fallback bug found and fixed.** The spike checks only `navigator.gpu` presence
+    and relies on try/catch to fall back to WASM. That never worked: a failed WebGPU
+    construction poisons the retry and transformers.js reports "no available backend found",
+    so the extension dies instead of falling back. `src/popup/nerParity.ts` now probes
+    `requestAdapter()` first. Verified with the GPU disabled: backend `wasm`, 19 spans.
+    `extension/popup.js` still has the bug — it is frozen and gets retired, not patched.
+  - **Backends disagree on marginal predictions.** WASM vs WebGPU on the same input: surfaces
+    identical, but scores drift (max delta 0.206 on `אלביט מערכות`) and one low-confidence tag
+    flips (`גוגל` ORG 0.549 → DUC 0.540). **P1-11's recall harness must pin a backend**, or its
+    ≥88.89% target will wobble by machine.
+  - **Open contradiction for P1-11 to settle:** CLAUDE.md says "WASM backend by default,
+    WebGPU opportunistic", but both the spike and this port prefer WebGPU when an adapter
+    exists — and on Apple Silicon that is the faster choice. Pick one and fix the docs.
+  Deviations from the plan, both improvements: the ORT runtime lands in `public/ort/`
+  (gitignored) rather than being written straight to `dist/`, so `npm run dev` serves it too;
+  and a `generateBundle` hook drops a duplicate hashed 23.5 MB `.wasm` that Rollup emits from
+  a `new URL()` reference inside the bundled ORT loader — that halves the package from 47 MB
+  to 24 MB, and the parity run proves the dropped asset is never fetched.
+  Not done here (deliberate): `extension/` is **not** yet archived — left loadable for one
+  human `chrome://extensions` → Load unpacked confirmation on Chrome stable first.
 - [ ] **P2-02** Paste flow end-to-end: detect → highlight by type → anonymized copy → download key
   Owner: unassigned
   DoD: real detections only; RTL correct; per-type counts shown.

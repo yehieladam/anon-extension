@@ -14,6 +14,12 @@ export default defineManifest({
   version: "0.1.0",
   description:
     "Anonymize Israeli PII in Hebrew text, fully in your browser. Nothing leaves your device.",
+  // Placeholder solid-colour icons copied from the spike; real branding lands with P5-02.
+  icons: {
+    16: "icons/icon16.png",
+    48: "icons/icon48.png",
+    128: "icons/icon128.png",
+  },
   action: {
     default_popup: "src/popup/index.html",
   },

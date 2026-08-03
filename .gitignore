@@ -8,6 +8,10 @@ build/
 *.onnx
 models/
 
+# the onnxruntime-web runtime (23.5MB .wasm) is copied out of node_modules at build
+# time by the copyOrtRuntime plugin in vite.config.ts — never commit it either
+public/ort/
+
 # env / secrets
 .env
 .env.*
