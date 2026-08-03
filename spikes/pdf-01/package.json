@@ -1,0 +1,19 @@
+{
+  "name": "pdf-01",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "PDF-01 throwaway feasibility spike: true client-side PII redaction with mupdf (WASM MuPDF).",
+  "scripts": {
+    "build:fixtures": "node src/build-latin.mjs && node src/build-hebrew.mjs",
+    "spike:latin": "node src/run.mjs latin",
+    "spike:hebrew": "node src/run.mjs hebrew",
+    "spike:image": "node src/image-probe.mjs",
+    "spike:options": "node src/save-options-matrix.mjs",
+    "spike": "npm run build:fixtures && npm run spike:latin && npm run spike:hebrew && npm run spike:options && npm run spike:image"
+  },
+  "license": "AGPL-3.0",
+  "dependencies": {
+    "mupdf": "^1.28.0"
+  }
+}

@@ -1,0 +1,8 @@
+node_modules/
+# Generated artifacts. hebrew.pdf and its renders EMBED the full Arial font
+# (proprietary) — must never be committed. All fixtures/outputs are regenerable
+# via `npm run build:fixtures` + `npm run spike`.
+fixtures/
+out/
+*.ttf
+*.otf
