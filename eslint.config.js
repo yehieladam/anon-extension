@@ -12,6 +12,8 @@ export default tseslint.config(
       "extension/**",
       // Phase-0 reference artifacts, not product code.
       "browser-poc/**",
+      // Throwaway feasibility spikes (Node .mjs scripts), kept for reference — not product code.
+      "spikes/**",
       "dist/**",
       "node_modules/**",
     ],
