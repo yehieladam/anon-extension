@@ -73,6 +73,14 @@ tasks. Both rely on Claude to write most of the code. Explain what you do in pla
   integrated GPUs — proven in Phase 0), WebGPU opportunistic.
 - **Extension UI (`extension/`):** React 18 + **Vite** + Tailwind, built for **Manifest V3** via
   `@crxjs/vite-plugin`. The UI is a thin shell that imports `engine/`.
+- **Web app (`web/`):** React 18 + **Vite** + Tailwind (+ **shadcn/ui**), on its own Vercel project
+  (subdomain `mechikon.bai-solutions…`). Thin shell over `engine/`.
+- **Off-main-thread (required):** the engine runs in a **Web Worker** (via **Comlink**) — 185 MB NER +
+  mupdf/tesseract WASM must never block the UI thread. Heavy WASM (mupdf, tesseract) is **lazy-loaded**
+  only when a PDF/scan is actually used. Model + WASM cached by a **Service Worker** (also powers the
+  offline-proof trust demo — TR).
+- **i18n:** **i18next** from day 1 — Hebrew-only at launch but **no hardcoded strings**, so English can
+  follow. Hebrew webfont is **self-hosted** (no Google Fonts CDN — that would break CSP/zero-network).
 - **File parsing:** `mammoth` (docx), `xlsx`/SheetJS (xlsx). **PDF is IN v1** (decision 2026-08-03,
   supersedes the earlier "PDF OUT of MVP") — via **`mupdf.js`** (the WASM build of MuPDF, the same
   engine behind the server's PyMuPDF; `page.applyRedactions()` does true content removal in the
@@ -80,7 +88,9 @@ tasks. Both rely on Claude to write most of the code. Explain what you do in pla
   not feasibility). Gated by a feasibility spike (PDF-01/PDF-02) that must return GO and pass the
   redaction acceptance test (extract text from the output PDF → PII must be gone). Fallback if NO-GO:
   anonymized text/DOCX output — never a server round-trip.
-- **Tests:** **Vitest**. **Lint/format:** ESLint (typescript-eslint) + Prettier. **CI:** GitHub Actions.
+- **Tests:** **Vitest** (unit, engine, headless). **Browser tests: Playwright** — the WASM redaction/OCR
+  and the 3-layer PDF acceptance test can't be verified in node-only Vitest; they run in a real browser.
+  **Lint/format:** ESLint (typescript-eslint) + Prettier. **CI:** GitHub Actions.
 
 Do not add a dependency without a reason. Prefer the platform + these libs over new packages.
 
@@ -89,7 +99,9 @@ Do not add a dependency without a reason. Prefer the platform + these libs over 
 1. **Real detection only** (see above). Determinism for numbers: regex + checksum, never the NER model.
 2. **Everything runs client-side.** No server calls, no account, no telemetry, no analytics, no remote
    logging. The only network fetch allowed is downloading the model files (once, cached). Anything that
-   phones home breaks the product's core promise — do not add it.
+   phones home breaks the product's core promise — do not add it. **Corollary — no remote error
+   monitoring either** (no Sentry). We accept being blind to remote crashes; instead surface errors
+   locally with an opt-in "copy error report" the user chooses to share. Never auto-send.
 3. **No PII, no secrets in the repo.** Test data is synthetic (fictional names). `.env` is gitignored.
    Never commit the model files (`*.onnx`) — they are fetched at runtime.
 4. **The engine stays framework-free.** No React/DOM/extension imports in `engine/`. If you need those,
