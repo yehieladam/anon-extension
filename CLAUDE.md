@@ -85,9 +85,12 @@ tasks. Both rely on Claude to write most of the code. Explain what you do in pla
   supersedes the earlier "PDF OUT of MVP") — via **`mupdf.js`** (the WASM build of MuPDF, the same
   engine behind the server's PyMuPDF; `page.applyRedactions()` does true content removal in the
   browser, zero server) and **`tesseract.js`** for scanned-PDF OCR (Hebrew accuracy is the open risk,
-  not feasibility). Gated by a feasibility spike (PDF-01/PDF-02) that must return GO and pass the
-  redaction acceptance test (extract text from the output PDF → PII must be gone). Fallback if NO-GO:
-  anonymized text/DOCX output — never a server round-trip.
+  not feasibility). **PDF-01 spike: GO for the text path** — `mupdf` 1.28.0 truly removes Hebrew PII
+  client-side. Two proven rules the impl MUST follow: save with **`{garbage:"deduplicate", compress:true,
+  sanitize:true}`** (a plain/`compress`-only save STILL leaks the orphaned content stream — `%%EOF` count
+  is NOT a sufficient check; the **raw-byte scan is the real gate**); and locate PII by **glyph quads**,
+  not by searching extracted text (MuPDF returns Hebrew in reversed visual order). Scanned/image-pixel
+  redaction is UNVERIFIED (gates PDF-05). Fallback if a path is NO-GO: text/DOCX output — never a server.
 - **Tests:** **Vitest** (unit, engine, headless). **Browser tests: Playwright** — the WASM redaction/OCR
   and the 3-layer PDF acceptance test can't be verified in node-only Vitest; they run in a real browser.
   **Lint/format:** ESLint (typescript-eslint) + Prettier. **CI:** GitHub Actions.

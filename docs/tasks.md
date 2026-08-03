@@ -266,42 +266,52 @@ is **Hebrew OCR accuracy on scans**, not feasibility. Why not the existing VPS t
 to a server = PII leaves the device = breaks the whole promise; the VPS tool is a separate server-side
 product, not this client-side one.
 
-**Engine/DOM boundary:** `mupdf.js` is pure WASM → lives in `engine/`. Fable 5: mupdf renders page
-pixmaps in pure WASM, so it can both feed tesseract AND destroy image pixels — the whole scanned
-pipeline can likely stay in `engine/` with **no Canvas/DOM**. Verify in PDF-01/02.
+**Engine/DOM boundary:** `mupdf.js` is pure WASM → lives in `engine/`. mupdf renders page pixmaps in
+pure WASM (feeds tesseract with no Canvas). **BUT — PDF-01 found image-pixel destruction UNVERIFIED**
+(`REDACT_IMAGE_PIXELS` did NOT erase pixels on a synthetic image fixture). So the "destroy scan pixels
+in WASM" assumption for the scanned path is NOT proven — see PDF-05 risk.
 
-**⚠️ CRITICAL — never incremental-save (Fable 5).** The official mupdfjs redaction example saves
-`incremental`, which APPENDS and leaves the pre-redaction objects physically recoverable in the file
-(multiple-`%%EOF` attack). Redacted output MUST be a full rewrite with garbage collection
-(`garbage`/`compress` save options), never incremental.
+**⚠️ CRITICAL — save options (PROVEN in PDF-01, corrects the earlier note).** "Not incremental" is
+**necessary but NOT sufficient**. `applyRedactions` orphans the old page content stream; a plain full
+rewrite — even `{compress:true}` — still serialises that orphan, so the PII stays **byte-recoverable
+with a single `%%EOF`**. Only **garbage collection** drops it. Proven matrix:
+`{incremental:true}` → LEAKS (2× EOF) · `{}` and `{compress:true}` → **LEAK** (1× EOF, byte scan still
+finds PII) · `{garbage:"deduplicate"|"compact", compress:true, sanitize:true}` → **TRUE REMOVAL**.
 
-**Non-negotiable acceptance test — THREE layers (Fable 5), enforced in code + CI on every output:**
+**Non-negotiable acceptance test — THREE layers, enforced in code + CI (hardened by PDF-01):**
 1. structured text re-extract → no PII;
-2. **raw-byte scan** of the output file for PII strings — check UTF-8, UTF-16, and reversed
-   visual-order byte forms (catches incremental leftovers, metadata, ToUnicode strings);
-3. file-structure check: single `%%EOF`, no prior object generations.
+2. **raw-byte scan** for PII in UTF-8, UTF-16, AND reversed/visual-order forms — this is the REAL gate
+   (it, not the `%%EOF` count, catches the missing-garbage leak). **Must skip embedded font/image
+   binaries** (a CID font's internal `0123456789` table false-positives on short numeric needles);
+3. file-structure check: single `%%EOF` — a supporting signal only. **Note the CID blind spot:** in an
+   embedded Type0/CID PDF, PII is stored as glyph IDs + hex ToUnicode and appears in NO UTF-8/16 bytes,
+   so Layer B is blind there and Layer C is what catches an incremental leak. Use all three.
 Never a black box over live text.
 
-- [ ] **PDF-01** Feasibility spike: `mupdf.js` `applyRedactions()` on a real Hebrew PDF (GO/NO-GO gate)
-  Owner: unassigned
-  Scope: load a Hebrew text PDF via mupdf.js, mark PII rects, `applyRedactions(blackBoxes, REDACT_IMAGE_PIXELS, …, REDACT_TEXT_REMOVE)`, **save full-rewrite + garbage (NOT incremental)**; run the 3-layer acceptance test. Include a masked/transparent-image fixture (upstream PyMuPDF segfault class, issue #434). Measure WASM size + per-page time.
-  DoD: GO/NO-GO + demo; 3-layer test passes incl. masked-image fixture; size/perf recorded. NO-GO fallback: anonymized text/DOCX output (never server).
+- [x] **PDF-01** Feasibility spike — **DONE, verdict GO for the text pipeline** (`feat/pdf-01-spike`, `spikes/pdf-01/FINDINGS.md`)
+  Owner: yehieladam (spike)
+  Result: `mupdf` 1.28.0 does true, client-side, server-free PII removal; full 3-layer test passes on Latin AND a real Hebrew fixture (embedded Arial Type0). WASM 9.93 MiB / **3.44 MiB brotli**; ~5 ms/page Latin, ~15 ms/page Hebrew; redacted output re-opens/renders fine. **Caveat: image-pixel redaction UNVERIFIED** (gates PDF-05, not the text path); PyMuPDF #434 segfault did NOT reproduce. Exact save options handed to PDF-04.
 - [ ] **PDF-02** Feasibility spike: `tesseract.js` Hebrew OCR (GO/NO-GO gate) — use `tessdata_best` `heb`
   Owner: unassigned
   Scope: OCR synthetic scanned Hebrew pages; confirm mupdf pixmap → tesseract works with no Canvas; spike PSM 4/6, `preserve_interword_spaces`, dictionary on/off (legal names are out-of-dictionary — the dawg can "correct" a real name into a wrong one). Feeds OCR-01 harness.
   DoD: GO/NO-GO; confirms no-Canvas path; knob findings recorded.
 - [ ] **PDF-03** PDF text extraction + bidi mapping (Hebrew reading order) via `mupdf.js`
   Owner: unassigned
-  Scope (Fable 5): MuPDF Hebrew extraction is known-treacherous (reversed runs, ligatures — PyMuPDF #2199). **Never map detections back by string-searching reordered text** — keep a per-character index map (logical-order text ↔ stext chars) and derive redaction rects from each span's **glyph quads**.
-  DoD: text + positions extracted; **mixed RTL/LTR + digits fixture** (LTR runs inside RTL lines) redacts at correct rects; feeds recognizers + NER unchanged.
+  Scope: **CONFIRMED by PDF-01** — MuPDF extracts Hebrew runs in **reversed visual order** (`ישראל ישראלי` comes back `ילארשי לארשי`), so a forward `search()` returns **0 hits**; and the ASCII hyphen round-trips as **U+00AD**, splitting `052-1234567` into `052`+`1234567`. **Never locate detections by string-searching extracted text** — build a per-glyph logical↔visual index map and derive redaction rects from **glyph quads**; normalise separators (U+00AD→`-`) and strip bidi controls before matching.
+  DoD: text + positions extracted; **mixed RTL/LTR + digits + hyphenated-number fixture** redacts at correct rects; a naïve `includes()` match is proven insufficient in tests; feeds recognizers + NER unchanged.
 - [ ] **PDF-04** PDF redaction output pipeline: detections → glyph-quad rects → `applyRedactions()` → redacted PDF
   Owner: unassigned
-  Scope: depends on PDF-01 GO. Full-rewrite+garbage save; consistent-value handling as the text flow.
-  DoD: real Hebrew PDF in → truly redacted PDF out; **3-layer acceptance test enforced in code** (self-verify, assert no PII); RTL correct.
-- [ ] **PDF-05** Scanned-PDF (OCR) redaction: `tesseract.js` boxes → `applyRedactions(REDACT_IMAGE_PIXELS)` → output
+  Scope: depends on PDF-01 GO (achieved). **Copy the PROVEN save options exactly:**
+  ```js
+  page.applyRedactions(true, PDFPage.REDACT_IMAGE_PIXELS, PDFPage.REDACT_LINE_ART_NONE, PDFPage.REDACT_TEXT_REMOVE);
+  const bytes = doc.saveToBuffer({ garbage: "deduplicate", compress: true, sanitize: true }).asUint8Array();
+  // NEVER { incremental: true }; NEVER a plain save without garbage — both LEAK.
+  ```
+  DoD: real Hebrew PDF in → truly redacted PDF out; **3-layer acceptance test enforced in code** (byte-scan is the gate; self-verify, assert no PII); RTL correct.
+- [ ] **PDF-05** Scanned-PDF (OCR) redaction ⚠️ **image-pixel destruction UNVERIFIED (PDF-01) — spike FIRST**
   Owner: unassigned
-  Scope (Fable 5): **do NOT canvas-paint-over** — place redact annotations over OCR boxes and let mupdf destroy the embedded scan's pixels (true removal, stays in WASM). Verify by **re-OCR of the redacted region** (assert no text). Honesty in UI re OCR-dependent accuracy.
-  DoD: scanned Hebrew PDF in → redacted output; re-OCR of redacted regions finds nothing; missed-text caveat surfaced.
+  Scope: PDF-01 found `REDACT_IMAGE_PIXELS` did NOT erase pixels on a synthetic image fixture. So the "let mupdf destroy the embedded scan's pixels in WASM" approach is **not proven** — before building, run a focused spike (**PDF-05a**) that redacts an actual scanned-image page and verifies pixels are gone by **re-OCR of the redacted region** (assert no text) AND visual diff. If it can't destroy scan pixels, fall back options: re-encode the page raster with the region painted, or reconsider scanned-in-v1. **This gates the "scanned OCR in v1" decision.**
+  DoD: spike proves true pixel destruction on a real scan; then scanned Hebrew PDF in → redacted output; re-OCR finds nothing; missed-text caveat surfaced. If spike fails → escalate the scanned-in-v1 scope decision.
 - [ ] **PDF-06** PDF sanitize pass — metadata & non-visible leak channels (Fable 5)
   Owner: unassigned
   Scope: redaction ≠ sanitization. Strip/clean: Info dict + **XMP metadata**, embedded files/attachments, annotation contents, form field values, **bookmarks/outlines** (often carry party names in legal PDFs), image EXIF/XMP.
