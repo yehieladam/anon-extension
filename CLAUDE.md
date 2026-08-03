@@ -16,6 +16,11 @@ not a technical one. The privacy-by-architecture story IS the product.
 > **Decision (2026-08-02): web app first, extension fast-follow.** Supersedes the earlier
 > "extension first" wording. Rationale in `docs/differentiation.md`. The MV3 spike stays loadable
 > (S-01) as the proof it works under extension constraints; it is not retired by this change.
+>
+> **Decision (2026-08-03): delivery + owners.** The web interface is embedded into the public
+> **BAI website** as the public tool, with a link to install the extension (CWS) for those who want
+> the always-on version. Owners: **@yehieladam → web app (P2W)**, **@nadavnbs → extension (P2, P5)**.
+> Embedding/isolation trade-off tracked in P2W-06.
 
 This is the client-side track. A separate server-side tool (Python/Streamlit/Presidio, in another
 repo, deployed to the BAI portal) already exists and is NOT part of this repo.

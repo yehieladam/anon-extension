@@ -72,9 +72,19 @@ unit test with the same valid/invalid cases the server checks use.
 
 ## P2W — web app (public front door, ships first — see CLAUDE.md decision 2026-08-02)
 
+**Owner of this track: @yehieladam** (division of labor, decided 2026-08-03: Yehiel → web app,
+Nadav → extension). Still set `Owner:` per task when claiming.
+
 The **web app is the first public surface** (zero install, best reach, no Store review, and it can run
 `crossOriginIsolated` → multi-threaded WASM → faster NER). Reuses `@engine/*` unchanged. The popup
 below (P2) becomes the **fast-follow** extension. Both share the engine — this is go-to-market ordering.
+
+**Delivery decision (2026-08-03):** the web interface is built here, then **embedded into the public
+BAI website** (`bai-solutions`) as the public tool, with a **link to install the extension** for users
+who want the always-on version. Open question to resolve in P2W-06: dedicated isolated route/subdomain
+vs iframe inside an existing BAI page — because `crossOriginIsolated` needs COOP/COEP headers on the
+top document, which can break third-party scripts elsewhere on the BAI site. If isolation isn't
+achievable on BAI infra, NER falls back to `numThreads=1` (works, just slower) — not a blocker.
 
 - [ ] **P2W-01** React + Vite web app shell on static hosting (Vercel/CDN), imports `@engine/*`
   Owner: unassigned
@@ -94,8 +104,14 @@ below (P2) becomes the **fast-follow** extension. Both share the engine — this
 - [ ] **P2W-05** Organic design tokens (cream/terracotta/sage, Suez One/Rubik) on the web app
   Owner: unassigned
   DoD: matches approved design system; RTL + LTR both checked.
+- [ ] **P2W-06** Embed the web interface into the public BAI website + "install the extension" link
+  Owner: unassigned
+  Scope: decide dedicated isolated route/subdomain vs iframe in an existing BAI page (see the isolation caveat above); wire the CWS install link (P5-05). Keep the tool page self-contained so its COOP/COEP don't have to fight the rest of the BAI site.
+  DoD: tool reachable on the public BAI site; runs in-browser with no PII network calls; extension-install link present; isolation approach documented (and NER perf noted if it fell back to numThreads=1).
 
 ## P2 — popup UX (Chrome extension, fast-follow after P2W; React shell in `src/`, imports `@engine/*`)
+
+**Owner of this track: @nadavnbs** (division of labor, decided 2026-08-03). Still set `Owner:` per task when claiming.
 
 - [ ] **P2-01** Migrate the spike into the Vite/crxjs build (retire `extension/` as the loadable)
   Owner: unassigned
@@ -147,10 +163,10 @@ below (P2) becomes the **fast-follow** extension. Both share the engine — this
 - [ ] **P5-04** Data-safety form ("no data collected") + submit + iterate on review
   Owner: unassigned
   DoD: extension published or review feedback triaged into tasks.
-- [ ] **P5-05** "Install the extension" CTA on the web app → links to the Chrome Web Store listing
+- [ ] **P5-05** "Install the extension" CTA on the BAI-hosted web app → links to the Chrome Web Store listing
   Owner: unassigned
-  Scope: Chrome removed inline install (2018) — this is a link/button to the CWS page, not an in-page install. Converts web visitors into returning users (see CLAUDE.md web-first decision).
-  DoD: CTA present on the web app; links to the live CWS listing (depends on P5-04 published).
+  Scope: Chrome removed inline install (2018) — this is a link/button to the CWS page, not an in-page install. Lives on the BAI-embedded tool (P2W-06); converts web visitors into returning users (see CLAUDE.md web-first decision).
+  DoD: CTA present on the public BAI tool page; links to the live CWS listing (depends on P5-04 published).
 
 ## TR — trust & verifiability (cross-cutting — see `docs/trust.md`)
 
