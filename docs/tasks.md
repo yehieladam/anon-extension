@@ -54,8 +54,9 @@ unit test with the same valid/invalid cases the server checks use.
   Owner: unassigned
   DoD: RFC-sane regex; tests incl. `.co.il` addresses; no false hits on plain Hebrew text.
 - [ ] **P1-11** `ner.ts` — transformers.js token-classification wrapper (dictabert-ner-ONNX q8)
-  Owner: unassigned
+  Owner: nadavnbs (`feat/p1-11-ner`) — plan: `docs/plans/p1-11-ner-wrapper.md`
   Scope: WASM default + `numThreads=1`; the Phase-0 tokenizer `\"`/`\'` `/u` shim; reconstruct null char offsets; strip/re-join `##` wordpieces (hyphenated names). See `browser-poc/PHASE0_FINDINGS.md` — all three fixes are mandatory.
+  Decided 2026-08-03: **token alignment**, not string re-matching — `aggregation_strategy: "none"`, align each token to the source text, group the BIO tags ourselves. Probes confirmed the tokenizer exposes no offsets, but `index` maps 1:1 into `tokenizer._encode_text(text)`, and walking those tokens re-anchors every entity exactly — `##` dissolves structurally. Entity scope is **PERSON/ORGANIZATION/LOCATION only**; `TIMEX`/`TTL`/`DUC` are dropped. Recall harness runs **browser WASM via playwright-core** (measure the runtime we ship; matches how Phase 0 produced the baseline).
   DoD: recall harness vs `browser-poc/ner_testset.json` ≥ 88.89% (server parity); unit tests for offset/`##` reconstruction with recorded model outputs.
 - [ ] **P1-12** `resolve.ts` — overlap resolution (PRIORITY map, deterministic > NER)
   Owner: unassigned
@@ -88,6 +89,16 @@ unit test with the same valid/invalid cases the server checks use.
 - [ ] **P2-05** Restore flow UI: upload key + anonymized text → originals (MVP, uses P1-15)
   Owner: unassigned
   DoD: round-trip works in the popup on a real anonymized doc + its key.
+- [ ] **P2-06** Manual blackout — the user selects any text and marks it for redaction (**MVP**)
+  Owner: unassigned
+  Added 2026-08-03 (@nadavnbs) — new requirement, not in the original plan. This is the
+  inverse of P2-04: P2-04 rescues words the tool wrongly flagged, P2-06 redacts words the
+  model never caught. At 88.89% recall the model will miss things, and this is the honest
+  answer to that — the user is not left with no recourse.
+  Scope: selection in the input maps to a character range, joins the resolved spans as a
+  first-class entity, and threads through the preview, the key CSV and restore exactly like a
+  detected span (so P1-14/P1-15 must exist first). Needs its own placeholder type.
+  DoD: a manually marked range anonymizes and restores losslessly, round-tripped in the popup.
 
 ## P3 — files (no PDF — see separate track)
 
