@@ -44,6 +44,10 @@ not a technical one. The privacy-by-architecture story IS the product.
 > - **Recognizer scope v1: all 8 Israeli recognizers** (ID, phone, company, IBAN, case, land, policy,
 >   insured) + Hebrew NER for names/orgs/places — the full Israeli-accuracy advantage.
 > - **Placeholder alphabet: Hebrew gershayim U+05F4** (`[ת״ז_1]`), locked — LLM-round-trip-safe (P1-13).
+> - **Model hosting: Cloudflare R2** (zero egress) with CORP/CORS/immutable-cache headers so
+>   `crossOriginIsolated` holds; one-time cached per browser (P4-02).
+> - **Restore key: default in-memory** (dies with the tab); download is opt-in; on download, passphrase
+>   encryption is offered via a checkbox **checked by default** (KEY-01).
 
 This is the client-side track. A separate server-side tool (Python/Streamlit/Presidio, in another
 repo, deployed to the BAI portal) already exists and is NOT part of this repo.
