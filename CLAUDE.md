@@ -29,6 +29,10 @@ not a technical one. The privacy-by-architecture story IS the product.
 > **Decision (2026-08-03): PDF + OCR are IN v1; single unified launch.** No early text-only launch —
 > v1 ships everything together including PDF redaction and scanned-PDF OCR (see the File-parsing note
 > above and the PDF track in `docs/tasks.md`). Gated by the PDF feasibility spike.
+>
+> **Decision (2026-08-03): the web app is open source (AGPL-compatible).** Required by `mupdf.js`
+> (AGPL-3.0) and embraced as a trust asset ("read the code — nothing is uploaded"). No commercial
+> MuPDF license. See P5-03 / `docs/trust.md` (TR-04).
 
 This is the client-side track. A separate server-side tool (Python/Streamlit/Presidio, in another
 repo, deployed to the BAI portal) already exists and is NOT part of this repo.

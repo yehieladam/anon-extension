@@ -160,11 +160,11 @@ achievable on BAI infra, NER falls back to `numThreads=1` (works, just slower) �
 - [ ] **P5-03** Verify third-party licenses for public launch
   Owner: unassigned
   Scope: dictabert-ner + its ONNX conversion; transformers.js (Apache-2.0); tesseract.js (Apache-2.0);
-  **`mupdf.js` — AGPL-3.0 ⚠️**. AGPL is copyleft with a network-use clause: a public web app using it
-  must offer its source to users. Decide NOW: (a) open-source the web app under an AGPL-compatible
-  license (aligns with TR-04), or (b) obtain an Artifex commercial MuPDF license. This is a launch
-  blocker for a commercially-hosted BAI tool — resolve before building on mupdf.js.
-  DoD: written confirmation per artifact in `docs/`; MuPDF license path chosen and documented; blockers escalated before submission.
+  **`mupdf.js` — AGPL-3.0**. **Decision 2026-08-03: open-source the whole web app under an
+  AGPL-compatible license** (option a) — satisfies MuPDF's network-use copyleft, aligns with TR-04,
+  and *strengthens* the trust story for lawyers ("read the code — nothing is uploaded"). No Artifex
+  commercial license needed. Still confirm dictabert-ner + ONNX conversion terms allow redistribution.
+  DoD: LICENSE (AGPL-compatible) added; per-artifact confirmation in `docs/`; blockers escalated before submission.
 - [ ] **P5-04** Data-safety form ("no data collected") + submit + iterate on review
   Owner: unassigned
   DoD: extension published or review feedback triaged into tasks.
