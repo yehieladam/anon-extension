@@ -77,6 +77,43 @@ unit test with the same valid/invalid cases the server checks use.
   Scope (Fable 5): **default = in-memory only** (the key map dies when the tab closes — the differentiation claim); **download is opt-in** (explicit user action). On download, offer passphrase **encryption via a checkbox that is CHECKED by default** (optional, recommended). Crypto: Argon2id via `hash-wasm` (MIT, tiny) → AES-256-GCM via native WebCrypto (zero added bytes); envelope `{v, kdf:{argon2id params,salt}, nonce, ciphertext}`; PBKDF2 ≥600k iters as zero-dep fallback. `crypto.subtle` works in workers/Node20 → stays framework-free. Marketing: "your restore vault is a file only you hold — encrypted, and we never saw it."
   DoD: default in-memory (no auto-download); opt-in download works; encryption checkbox default-on; encrypt/decrypt round-trip with passphrase; wrong passphrase fails cleanly; engine unit-tested headless.
 
+## P0I — foundational infra & tooling (before the P2W UI — stack-gap review 2026-08-03)
+
+Architecture/tooling gaps found in the pre-build review. **Several are prerequisites for P2W** — don't
+build the UI on the main thread and retrofit later.
+
+- [ ] **P0I-01** Engine in a **Web Worker** via **Comlink** (HARD prerequisite for P2W)
+  Owner: unassigned
+  Scope: 185 MB NER + mupdf/tesseract WASM must run off the UI thread or the page freezes. Engine exposes an async API through Comlink; app never calls engine on the main thread. Works with `crossOriginIsolated` (multi-thread) and degrades to `numThreads=1`.
+  DoD: paste→detect runs in a worker; UI stays responsive during a large doc; typed Comlink surface.
+- [ ] **P0I-02** **Lazy-load** heavy WASM (mupdf, tesseract) only when PDF/scan is used
+  Owner: unassigned
+  Scope: someone pasting text must NOT pay for mupdf/tesseract. Dynamic-import the PDF/OCR modules on first use; NER model loads for the core flow.
+  DoD: text-only session never fetches mupdf/tesseract; PDF/scan triggers their load with progress.
+- [ ] **P0I-03** **Service Worker**: cache model + WASM (one-time per browser) + power the offline proof
+  Owner: unassigned
+  Scope: Cache API/SW so the 185 MB model + WASM are one-time; also enables the "works offline" trust demo (TR). Coordinates with R2 caching (P4-02).
+  DoD: second visit is fully cache-served (verify offline); model integrity checked (see P0I-04).
+- [ ] **P0I-04** **Model integrity check** (hash-verify the R2 download)
+  Owner: unassigned
+  Scope: verify the downloaded model file against a known SHA-256 so a compromised CDN can't swap it. Trust + supply-chain.
+  DoD: mismatched hash refuses to run with a clear error; expected hash pinned in the build.
+- [ ] **P0I-05** **i18next** set up day 1 (Hebrew-only launch, no hardcoded strings) + **self-hosted Hebrew font**
+  Owner: unassigned
+  Scope: all UI text via keys (he now, en later); professional Hebrew webfont self-hosted (no Google Fonts CDN — breaks CSP/zero-network).
+  DoD: zero hardcoded UI strings; font served locally; RTL correct.
+- [ ] **P0I-06** **Playwright** browser-test harness (enforces the PDF/OCR acceptance tests)
+  Owner: unassigned
+  Scope: node-only Vitest can't verify WASM redaction/OCR; Playwright runs the real-browser 3-layer PDF acceptance test + core flows in CI.
+  DoD: Playwright wired into CI; a PDF redaction acceptance test runs in-browser and fails on any PII leak.
+- [ ] **P0I-07** **Local error strategy** (no remote monitoring — hard rule)
+  Owner: unassigned
+  Scope: no Sentry/telemetry; catch errors, show a friendly message + an opt-in "copy error report" the user chooses to share. Never auto-send.
+  DoD: unhandled errors surfaced locally; copy-report works; nothing leaves the device automatically.
+- [ ] **P0I-08** **shadcn/ui** baseline + accessibility (WCAG, 44px targets, RTL)
+  Owner: unassigned
+  DoD: shadcn/ui installed; interactive elements ≥44px; keyboard + screen-reader sane; RTL checked.
+
 ## P2W — web app (public front door, ships first — see CLAUDE.md decision 2026-08-02)
 
 **Owner of this track: @yehieladam** (division of labor, decided 2026-08-03: Yehiel → web app,
