@@ -87,11 +87,14 @@ The **web app is the first public surface** (zero install, best reach, no Store 
 below (P2) becomes the **fast-follow** extension. Both share the engine — this is go-to-market ordering.
 
 **Delivery decision (2026-08-03):** product name **מחיקון / "Mechikon"**, served on a **dedicated
-subdomain `mechikon.bai-solutions…`** (own Vercel project) — resolves the isolation trade-off in favor
-of a clean origin: `crossOriginIsolated` (COOP/COEP) for multi-threaded WASM AND zero analytics on that
-origin (trust requirement), without touching the main Next.js/Vercel BAI site. Cross-linked from BAI +
-a **link to install the extension**. If isolation somehow isn't achievable, NER falls back to
-`numThreads=1` (works, just slower) — not a blocker.
+subdomain `mechikon.bai-solutions…`** (own Vercel project), **cross-linked from the BAI site** (plain
+link, no proxy) + a **link to install the extension**. Note: a subdomain is **free** (just DNS) — cost
+was never the issue. Chosen over a path (`/mechikon` via Next rewrite) because a separate origin gives
+`crossOriginIsolated` (COOP/COEP → multi-threaded WASM) AND zero analytics **automatically** (BAI's
+global GA/pixel physically can't load on another origin) — a path would require manually scoping
+headers and excluding tracking. Trade-off accepted: slightly less "under the main domain" for SEO/brand
+vs guaranteed isolation. If isolation somehow isn't achievable, NER falls back to `numThreads=1` — not
+a blocker. The Mechikon build stays in THIS repo (open-source/AGPL), never merged into the BAI site code.
 
 - [ ] **P2W-01** React + Vite web app shell on static hosting (Vercel/CDN), imports `@engine/*`
   Owner: unassigned
