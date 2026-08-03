@@ -9,12 +9,17 @@
 > MVP / restore deferred" wording in `docs/chrome-extension-plan.md` §6-§7. `restore.ts` is task
 > P1-15 below; the key format (P1-14) was already restore-compatible by design.
 
-## Spike — MV3 mechanics (built, awaiting manual verification)
+## Spike — MV3 mechanics (built, VERIFIED — GO)
 
-- [ ] **S-01** Load the built spike in real Chrome and record go/no-go
-  Owner: unassigned
+- [x] **S-01** Load the built spike in real Chrome and record go/no-go
+  Owner: nadavnbs
   Scope: `chrome://extensions` → load unpacked `extension/` → run sample text; confirm spans render, WASM badge, model cache-hit on reopen (steps in `extension/README.md`).
   DoD: result (screenshots + verdict) noted in `extension/README.md`; GO unlocks P1 NER port confidence.
+  **Result (2026-08-02): GO.** 19 spans, 0 console errors, 0 network requests on warm reopen
+  (warm load 741 ms / inference 379 ms). Full record + screenshots in `extension/README.md`.
+  Four follow-ups it surfaced, all folded into the tasks below: WebGPU wins on Apple Silicon
+  (P2-01), a benign `chrome-extension`-scheme cache warning (P2-01), unmapped `TIMEX`/`TTL`/`DUC`
+  tags (P1-11), and Hebrew prefix letters inside NER surfaces (P1-13).
 
 ## P1 — engine module (`engine/src/`, framework-free TS)
 
@@ -55,13 +60,14 @@ unit test with the same valid/invalid cases the server checks use.
   DoD: RFC-sane regex; tests incl. `.co.il` addresses; no false hits on plain Hebrew text.
 - [ ] **P1-11** `ner.ts` — transformers.js token-classification wrapper (dictabert-ner-ONNX q8)
   Owner: unassigned
-  Scope: WASM default + `numThreads=1`; the Phase-0 tokenizer `\"`/`\'` `/u` shim; reconstruct null char offsets; strip/re-join `##` wordpieces (hyphenated names). See `browser-poc/PHASE0_FINDINGS.md` — all three fixes are mandatory.
+  Scope: WASM default + `numThreads=1`; the Phase-0 tokenizer `\"`/`\'` `/u` shim; reconstruct null char offsets; strip/re-join `##` wordpieces (hyphenated names). See `browser-poc/PHASE0_FINDINGS.md` — all three fixes are mandatory. **Added by S-01:** the tag→`EntityType` map must handle `TIMEX`, `TTL` and `DUC` explicitly (all three were observed live; Phase 0's map covers only PER/ORG/GPE/LOC/FAC). Decide per tag: drop, or map to a type.
   DoD: recall harness vs `browser-poc/ner_testset.json` ≥ 88.89% (server parity); unit tests for offset/`##` reconstruction with recorded model outputs.
 - [ ] **P1-12** `resolve.ts` — overlap resolution (PRIORITY map, deterministic > NER)
   Owner: unassigned
   DoD: port of server `analyze.py` `PRIORITY` + greedy keep-strongest; tests for ID-inside-NER-span and adjacent-span cases; output non-overlapping, reading order.
 - [ ] **P1-13** `anonymize.ts` — typed Hebrew placeholders (`[שם_1]`, `[ת"ז_1]`), consistent per surface value
   Owner: unassigned
+  Scope note (from S-01): NER surfaces include Hebrew prefix letters — `בתל אביב`, `לניו יורק`, `במשרד האוצר`. Replacing the whole span deletes the preposition. Decide explicitly: strip leading ב/ל/מ/ה/ו/כ/ש before replacing, or accept it.
   DoD: port of server `anonymize.py`; same value → same placeholder; numbering in reading order; tests.
 - [ ] **P1-14** `key.ts` — reversible mapping rows + CSV serialization (restore-compatible)
   Owner: unassigned

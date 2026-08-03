@@ -103,10 +103,61 @@ Clearing the extension (remove/re-add) clears the cache and re-triggers the down
    huggingface.co serves CORS `Access-Control-Allow-Origin: *`; a production self-host
    must send the same header (or be added to `host_permissions`).
 
-## What is honestly NOT proven until a real Chrome load
+## S-01 verification result — **GO** (2026-08-02)
 
-Everything here is syntax-validated and the vendored bundle import-checked in Node, but
-no real browser ran it in this environment. The single manual step above (load unpacked,
-click the button) is the actual go/no-go test for: CSP acceptance, WASM compile in a
-popup, model download + Cache API persistence in the extension origin, and the shim
-firing before tokenizer build inside an extension page.
+Run on macOS (Apple Silicon), Chrome for Testing 149.0.7827.55, extension loaded unpacked
+via `--load-extension`, popup opened as a full tab (`chrome-extension://<id>/popup.html`).
+Screenshots: [`docs/s01/s01-cold.png`](../docs/s01/s01-cold.png) (first download),
+[`docs/s01/s01-warm.png`](../docs/s01/s01-warm.png) (cached reopen).
+
+| Go/no-go criterion | Result |
+|---|---|
+| Popup loads under MV3 CSP | ✅ HTTP 200, no CSP violation |
+| RegExp shim fires before tokenizer build | ✅ `new RegExp('\\"', 'u')` compiles in the page |
+| Model downloads from HF CDN | ✅ 189 MB, redirected to `us.aws.cdn.hf.co` (matches `*.hf.co` in `connect-src`) |
+| NER actually runs | ✅ 19 spans on the 5-line sample |
+| Cache API persists in the extension origin | ✅ `transformers-cache`, 4 entries |
+| Reopen loads from cache | ✅ **0 external network requests** on the warm run |
+| Console errors | ✅ none (one non-fatal warning, below) |
+
+Timings — cold: model load 17.5 s (download + compile), inference 913 ms. Warm: model load
+**741 ms**, inference **379 ms** (5 lines). Warm reopen is fast enough that the P4 offscreen
+document looks like a nice-to-have, not a blocker.
+
+### Four things the run taught us (not all of them expected)
+
+1. **WebGPU won on this machine, not WASM.** The badge read `WEBGPU`. Phase 0's "WASM beats
+   WebGPU" was measured on an Intel Iris Xe iGPU and explicitly predicted the reverse on Apple
+   Silicon — so this confirms the caveat rather than contradicting the finding. The
+   opportunistic-WebGPU-with-WASM-fallback strategy in `popup.js` is doing exactly its job.
+   Note: WASM was never exercised on this hardware, so the WASM path here is still unverified.
+2. **New, non-fatal warning:** `Failed to cache ort-wasm-simd-threaded.asyncify.wasm: Request
+   scheme 'chrome-extension' is unsupported`. transformers.js tries to store the *vendored,
+   already-local* ORT wasm in the Cache API, and the Cache API rejects `chrome-extension://`
+   requests. Harmless (the file loads from the bundle), but it will recur in the P2-01 build —
+   worth suppressing or documenting so it is not mistaken for a real failure.
+3. **The model emits more tag types than this README listed.** Observed: `PER`, `ORG`, `GPE`,
+   `FAC`, plus **`TIMEX`** (dates: `ביום שלישי`, `שנת 2019`), **`TTL`** (titles: `עורכת הדין`),
+   and **`DUC`** (`אלביט מערכות` came back `DUC`, not `ORG` — the same entity Phase 0 recorded
+   as a server miss). P1-11's tag→`EntityType` map must decide explicitly what happens to
+   `TIMEX`/`TTL`/`DUC`; Phase 0's map only covered PER/ORG/GPE/LOC/FAC.
+4. **Returned surfaces swallow Hebrew prefix letters** — `בתל אביב`, `בחיפה`, `לניו יורק`,
+   `במשרד האוצר` include the ב/ל prefix. Anonymizing the whole span would delete the
+   preposition along with the place name. P1-13 needs a deliberate decision here (strip the
+   prefix, or accept `[מיקום_1]` swallowing it).
+
+Confirmed for P4-02 self-hosting — the exact cold-load file list is:
+`config.json`, `tokenizer_config.json`, `tokenizer.json`, `onnx/model_quantized.onnx`.
+
+Also re-confirmed as expected (Phase-0 artifacts, P1-11's job): **all 19 spans returned
+`start`/`end` as `null`**. No `##` markers appeared, but the sample contains no hyphenated
+names — that artifact is still live.
+
+### Still not covered by this run
+
+The extension was loaded with `--load-extension` under automation, not by clicking **Load
+unpacked** in `chrome://extensions` on Chrome *stable* (which is 150 on this machine, and no
+longer accepts that flag). The substance — CSP acceptance, WASM/WebGPU compile in an extension
+page, model download, Cache API persistence, shim ordering — is proven; the manual load path
+is worth one human run before relying on it. The popup-lifetime problem (§5 below) was also
+sidestepped by running in a tab, exactly as this README recommends.
