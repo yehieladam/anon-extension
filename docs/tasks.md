@@ -62,7 +62,7 @@ unit test with the same valid/invalid cases the server checks use.
   DoD: port of server `analyze.py` `PRIORITY` + greedy keep-strongest; tests for ID-inside-NER-span and adjacent-span cases; output non-overlapping, reading order.
 - [ ] **P1-13** `anonymize.ts` — typed Hebrew placeholders, **LLM-round-trip-safe alphabet**, consistent per surface value
   Owner: unassigned
-  Scope (Fable 5): **do NOT use ASCII `"` in placeholders** — `[ת"ז_1]` gets smart-quoted by ChatGPT/Word (`”`, U+05F4 `״`) and silently breaks restore. Emit gershayim U+05F4 (`[ת״ז_1]`) or quote-free (`[תז_1]`). Consistency map keyed on `(NFC-normalized + trimmed + whitespace-collapsed + quote-unified value, type)`; deterministic numbering by first appearance in reading order; the SAME map instance shared across text/PDF/docx handlers (engine invariant).
+  Scope (Fable 5): **do NOT use ASCII `"` in placeholders** — `[ת"ז_1]` gets smart-quoted by ChatGPT/Word (`”`, U+05F4 `״`) and silently breaks restore. **LOCKED DECISION 2026-08-03: use Hebrew gershayim U+05F4 → `[ת״ז_1]`** (reads natural to a lawyer, LLM-safe). Consistency map keyed on `(NFC-normalized + trimmed + whitespace-collapsed + quote-unified value, type)`; deterministic numbering by first appearance in reading order; the SAME map instance shared across text/PDF/docx handlers (engine invariant).
   DoD: port of server `anonymize.py` with the safe alphabet; same value → same placeholder across surfaces; numbering in reading order; tests incl. curly-apostrophe twins (`ג'ורג'`).
 - [ ] **P1-14** `key.ts` — canonical `key.v1` JSON + CSV export (restore-compatible)
   Owner: unassigned
