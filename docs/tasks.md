@@ -72,10 +72,10 @@ unit test with the same valid/invalid cases the server checks use.
   Owner: unassigned
   Scope (Fable 5): tolerant matcher — NFC normalize, quote-variant class (`" ” ״ ׳ '`), optional whitespace, and **strip Unicode bidi controls** (LRM/RLM U+200E/F, FSI/PDI U+2066–2069) that LLMs/RTL editors inject invisibly. Unmatched placeholders → listed report, never silent. Source that already looks like a placeholder → warn before anonymizing.
   DoD: restore(anonymize(text)) === text property test; **property tests on recorded real ChatGPT/Claude replies** containing placeholders; repeated + missing-key handled explicitly.
-- [ ] **KEY-01** Optional passphrase encryption of the key file (key-at-rest)
+- [ ] **KEY-01** Restore-key UX + optional passphrase encryption (decisions 2026-08-03)
   Owner: unassigned
-  Scope (Fable 5): Argon2id via `hash-wasm` (MIT, tiny) → AES-256-GCM via native WebCrypto (zero added bytes); envelope `{v, kdf:{argon2id params,salt}, nonce, ciphertext}`; PBKDF2 ≥600k iters as zero-dep fallback. `crypto.subtle` works in workers/Node20 → stays framework-free. Default remains in-memory (dies with the tab); download + encryption are explicit user actions. Marketing: "your restore vault is a file only you hold — we never saw it."
-  DoD: encrypt/decrypt round-trip with passphrase; wrong passphrase fails cleanly; engine unit-tested headless.
+  Scope (Fable 5): **default = in-memory only** (the key map dies when the tab closes — the differentiation claim); **download is opt-in** (explicit user action). On download, offer passphrase **encryption via a checkbox that is CHECKED by default** (optional, recommended). Crypto: Argon2id via `hash-wasm` (MIT, tiny) → AES-256-GCM via native WebCrypto (zero added bytes); envelope `{v, kdf:{argon2id params,salt}, nonce, ciphertext}`; PBKDF2 ≥600k iters as zero-dep fallback. `crypto.subtle` works in workers/Node20 → stays framework-free. Marketing: "your restore vault is a file only you hold — encrypted, and we never saw it."
+  DoD: default in-memory (no auto-download); opt-in download works; encryption checkbox default-on; encrypt/decrypt round-trip with passphrase; wrong passphrase fails cleanly; engine unit-tested headless.
 
 ## P2W — web app (public front door, ships first — see CLAUDE.md decision 2026-08-02)
 
@@ -157,9 +157,10 @@ a blocker. The Mechikon build stays in THIS repo (open-source/AGPL), never merge
 - [ ] **P4-01** Offscreen document keeps the pipeline loaded across popup opens
   Owner: unassigned
   DoD: reopen-to-ready < 1 s warm; offscreen justification enum validated for Store review.
-- [ ] **P4-02** Switch model source HF CDN → our VPS/CDN (`env.remoteHost`, one `connect-src`, CORS `*`; optionally pre-patched `tokenizer.json` to drop the shim)
+- [ ] **P4-02** Self-host the model on **Cloudflare R2** (decision 2026-08-03) — brought forward for the web app
   Owner: unassigned
-  DoD: cold load works from self-host only; HF domains removed from CSP.
+  Scope: R2 chosen for **zero egress fees** (185 MB × every first visit stays cheap at scale). Serve via a custom domain with **CORP `cross-origin` + CORS + long-immutable cache** headers so `crossOriginIsolated` (COEP) holds; `env.remoteHost` + one `connect-src`; aggressive Cache API so it's one-time per browser; optionally pre-patched `tokenizer.json` to drop the shim. HF domains removed from CSP.
+  DoD: cold load works from R2 only; `crossOriginIsolated === true` with the model loaded; second visit is cache-hit (no re-download); HF removed.
 
 ## P5 — Chrome Web Store
 
