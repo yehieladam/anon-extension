@@ -33,6 +33,17 @@ not a technical one. The privacy-by-architecture story IS the product.
 > **Decision (2026-08-03): the web app is open source (AGPL-compatible).** Required by `mupdf.js`
 > (AGPL-3.0) and embraced as a trust asset ("read the code — nothing is uploaded"). No commercial
 > MuPDF license. See P5-03 / `docs/trust.md` (TR-04).
+>
+> **Decision (2026-08-03): product identity + v1 scope.**
+> - **Name: מחיקון / "Mechikon"** — subdomain `mechikon.bai-solutions…`, CWS listing "Mechikon".
+> - **UI language: Hebrew only at launch** (audience is Israeli, RTL); i18n-ready so English can
+>   follow without a rewrite — never hardcode strings.
+> - **Design identity: professional / legal** (navy/slate, serious, trust-forward) — the audience is
+>   risk-averse lawyers. This **supersedes** the earlier "organic" mockup (cream/terracotta/sage,
+>   Suez One/Rubik) for this product.
+> - **Recognizer scope v1: all 8 Israeli recognizers** (ID, phone, company, IBAN, case, land, policy,
+>   insured) + Hebrew NER for names/orgs/places — the full Israeli-accuracy advantage.
+> - **Placeholder alphabet: Hebrew gershayim U+05F4** (`[ת״ז_1]`), locked — LLM-round-trip-safe (P1-13).
 
 This is the client-side track. A separate server-side tool (Python/Streamlit/Presidio, in another
 repo, deployed to the BAI portal) already exists and is NOT part of this repo.

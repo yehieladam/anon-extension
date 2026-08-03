@@ -86,12 +86,12 @@ The **web app is the first public surface** (zero install, best reach, no Store 
 `crossOriginIsolated` → multi-threaded WASM → faster NER). Reuses `@engine/*` unchanged. The popup
 below (P2) becomes the **fast-follow** extension. Both share the engine — this is go-to-market ordering.
 
-**Delivery decision (2026-08-03):** the web interface is built here, then **embedded into the public
-BAI website** (`bai-solutions`) as the public tool, with a **link to install the extension** for users
-who want the always-on version. Open question to resolve in P2W-06: dedicated isolated route/subdomain
-vs iframe inside an existing BAI page — because `crossOriginIsolated` needs COOP/COEP headers on the
-top document, which can break third-party scripts elsewhere on the BAI site. If isolation isn't
-achievable on BAI infra, NER falls back to `numThreads=1` (works, just slower) — not a blocker.
+**Delivery decision (2026-08-03):** product name **מחיקון / "Mechikon"**, served on a **dedicated
+subdomain `mechikon.bai-solutions…`** (own Vercel project) — resolves the isolation trade-off in favor
+of a clean origin: `crossOriginIsolated` (COOP/COEP) for multi-threaded WASM AND zero analytics on that
+origin (trust requirement), without touching the main Next.js/Vercel BAI site. Cross-linked from BAI +
+a **link to install the extension**. If isolation somehow isn't achievable, NER falls back to
+`numThreads=1` (works, just slower) — not a blocker.
 
 - [ ] **P2W-01** React + Vite web app shell on static hosting (Vercel/CDN), imports `@engine/*`
   Owner: unassigned
@@ -108,13 +108,14 @@ achievable on BAI infra, NER falls back to `numThreads=1` (works, just slower) �
   Owner: unassigned
   Scope: small badge/panel stating "0 network requests (except the one-time model download)"; extend the WASM badge from the spike. Makes the marketing claim (`docs/marketing.md`) concrete.
   DoD: badge reflects real state; no false claim; visible in the UI.
-- [ ] **P2W-05** Organic design tokens (cream/terracotta/sage, Suez One/Rubik) on the web app
+- [ ] **P2W-05** Design system: **professional/legal** identity (navy/slate, trust-forward) on the web app
   Owner: unassigned
-  DoD: matches approved design system; RTL + LTR both checked.
-- [ ] **P2W-06** Embed the web interface into the public BAI website + "install the extension" link
+  Scope: decision 2026-08-03 — audience is risk-averse lawyers; **supersedes the earlier organic mockup** (cream/terracotta/sage, Suez One/Rubik). Semantic tokens, not raw colors. Hebrew-only UI, RTL.
+  DoD: professional/legal tokens defined; RTL correct; trust surface (TR) prominent, not in the footer.
+- [ ] **P2W-06** Deploy Mechikon on the `mechikon.bai-solutions…` subdomain + cross-link from BAI + install-extension link
   Owner: unassigned
-  Scope: decide dedicated isolated route/subdomain vs iframe in an existing BAI page (see the isolation caveat above); wire the CWS install link (P5-05). Keep the tool page self-contained so its COOP/COEP don't have to fight the rest of the BAI site.
-  DoD: tool reachable on the public BAI site; runs in-browser with no PII network calls; extension-install link present; isolation approach documented (and NER perf noted if it fell back to numThreads=1).
+  Scope: own Vercel project on the subdomain (isolation decided — see header); DNS CNAME from the BAI domain; prominent link from the main BAI site to the tool; wire the CWS install link (P5-05). Verify `crossOriginIsolated` is true and zero analytics on the origin.
+  DoD: `mechikon.bai-solutions…` live; `crossOriginIsolated === true`; no analytics/PII network calls; linked from BAI; install-extension link present.
 
 ## P2 — popup UX (Chrome extension, fast-follow after P2W; React shell in `src/`, imports `@engine/*`)
 
@@ -127,9 +128,10 @@ achievable on BAI infra, NER falls back to `numThreads=1` (works, just slower) �
 - [ ] **P2-02** Paste flow end-to-end: detect → highlight by type → anonymized copy → download key
   Owner: unassigned
   DoD: real detections only; RTL correct; per-type counts shown.
-- [ ] **P2-03** Organic design tokens (cream/terracotta/sage, Suez One/Rubik) on the popup
+- [ ] **P2-03** Design system: **professional/legal** identity on the popup (shared tokens with P2W-05)
   Owner: unassigned
-  DoD: matches the approved design system; RTL + LTR both checked.
+  Scope: same professional/legal system as the web app (supersedes the organic mockup); Hebrew-only, RTL.
+  DoD: matches the P2W-05 token set; RTL correct.
 - [ ] **P2-04** Keep-word rescue + per-type toggles (mirror the Streamlit tool)
   Owner: unassigned
   DoD: manual keeps thread through preview, key CSV, and outputs.
@@ -161,9 +163,9 @@ achievable on BAI infra, NER falls back to `numThreads=1` (works, just slower) �
 - [ ] **P5-01** Privacy policy page (one page, hosted, linked)
   Owner: unassigned
   DoD: states "100% local, no data collected" truthfully; URL in the listing.
-- [ ] **P5-02** Listing assets: name, icons, RTL-correct Hebrew screenshots, descriptions (he+en), promo tile
+- [ ] **P5-02** Listing assets: name **"Mechikon / מחיקון"**, icons, RTL-correct Hebrew screenshots, descriptions (he primary; en later), promo tile
   Owner: unassigned
-  DoD: assets reviewed by both devs; first-load 185 MB download expectation stated in the listing.
+  DoD: assets reviewed by both devs; first-load download expectation stated in the listing (NER ~185 MB + mupdf/tesseract WASM + heb tessdata) — honest one-time-download note.
 - [ ] **P5-03** Verify third-party licenses for public launch
   Owner: unassigned
   Scope: dictabert-ner + its ONNX conversion; transformers.js (Apache-2.0); tesseract.js (Apache-2.0);
