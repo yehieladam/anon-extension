@@ -18,8 +18,8 @@ export type {
 export { PRIORITY } from "./types";
 
 export { isValidIsraeliId, israeliIdRecognizer } from "./recognizers/israeliId";
+export { isValidIsraeliPhone, israeliPhoneRecognizer } from "./recognizers/israeliPhone";
 
-// TODO(P1-03): export israeliPhoneRecognizer from "./recognizers/israeliPhone"
 // TODO(P1-04): export israeliCompanyRecognizer from "./recognizers/israeliCompany"
 // TODO(P1-05): export israeliIbanRecognizer from "./recognizers/israeliIban"
 // TODO(P1-06): export israeliCaseRecognizer from "./recognizers/israeliCase"

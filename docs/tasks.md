@@ -29,9 +29,9 @@ unit test with the same valid/invalid cases the server checks use.
 - [x] **P1-02** `recognizers/israeliId.ts` — ת"ז, Luhn checksum
   Owner: yehieladam (landed in `chore/foundation`)
   DoD: same 5 valid / 5 invalid IDs as server `check_task1.py` pass in Vitest; 000000000 rejected.
-- [ ] **P1-03** `recognizers/israeliPhone.ts` — IL_PHONE (mobile + landline formats)
-  Owner: unassigned
-  DoD: port of `israeli_phone.py` regexes; unit tests cover 052-/03- style samples + negatives.
+- [x] **P1-03** `recognizers/israeliPhone.ts` — IL_PHONE (mobile + landline formats)
+  Owner: yehieladam
+  DoD: numbering-plan regex (05x/07x mobile, 02/03/04/08/09 landline, +972 trunk) + validator; 37 unit tests (052-/03- samples, +972, separators, negatives, 9-digit-ID guard, no-bite-into-long-run). Server `israeli_phone.py` not vendored here — faithful re-impl, reconcile if server samples diverge.
 - [ ] **P1-04** `recognizers/israeliCompany.ts` — IL_COMPANY (ח"פ, checksum like ID)
   Owner: unassigned
   DoD: port of `israeli_company.py`; valid/invalid checksum tests.
