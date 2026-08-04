@@ -19,9 +19,8 @@ export { PRIORITY } from "./types";
 
 export { isValidIsraeliId, israeliIdRecognizer } from "./recognizers/israeliId";
 export { isValidIsraeliPhone, israeliPhoneRecognizer } from "./recognizers/israeliPhone";
-
-// TODO(P1-04): export israeliCompanyRecognizer from "./recognizers/israeliCompany"
-// TODO(P1-05): export israeliIbanRecognizer from "./recognizers/israeliIban"
+export { isValidIsraeliCompany, israeliCompanyRecognizer } from "./recognizers/israeliCompany";
+export { isValidIsraeliIban, israeliIbanRecognizer } from "./recognizers/israeliIban";
 // TODO(P1-06): export israeliCaseRecognizer from "./recognizers/israeliCase"
 // TODO(P1-07): export israeliLandRecognizer from "./recognizers/israeliLand"
 // TODO(P1-08): export israeliPolicyRecognizer from "./recognizers/israeliPolicy"
