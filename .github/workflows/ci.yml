@@ -32,3 +32,25 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  e2e:
+    # Real-browser acceptance gate (P0I-06): the PDF redaction WASM path can only be verified in a
+    # browser. The core spec blocks the model host, so no 185 MB download here (the @model spec is
+    # excluded via test:e2e's --grep-invert and runs locally before deploy).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install (from lockfile)
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E (core specs, model blocked)
+        run: npm run test:e2e

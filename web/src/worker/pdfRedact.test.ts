@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { extractPdfMapped, redactPdf } from "./pdfRedact";
-import { anonymizeDeterministic, detectDeterministic } from "@engine/pipeline";
+import { anonymizeDeterministic, anonymizeFull, detectDeterministic } from "@engine/pipeline";
 import { quadsForSpan, refsToRects } from "@engine/pdfText";
 import { layerB, layerC } from "@engine/pdfVerify";
 
@@ -117,6 +117,32 @@ describe("redactPdf — true removal + in-production self-verify (real fixture)"
     expect(c.pass).toBe(false);
     expect(c.eofCount).toBeGreaterThan(1);
     /* eslint-enable @typescript-eslint/no-explicit-any */
+  });
+});
+
+describe("redactPdf — NER name spans are truly removed (model-free, via injected anonymize)", () => {
+  it("removes a Hebrew PERSON name from the PDF when a name span is detected", async () => {
+    const NAME = "ישראל ישראלי";
+    // Stand in for the NER pass: mark the name as a PERSON span, merged with deterministic detection.
+    // (NER detection itself is proven separately; this isolates the PDF name-redaction path from the
+    // 185 MB model download so it runs offline in CI.)
+    const withName = (text: string) => {
+      // Every occurrence — the name appears on more than one line, and self-verify (correctly) fails
+      // if any mention survives. Real NER returns all mentions too.
+      const spans = [];
+      for (let at = text.indexOf(NAME); at >= 0; at = text.indexOf(NAME, at + NAME.length)) {
+        spans.push({ start: at, end: at + NAME.length, type: "PERSON" as const, score: 0.99 });
+      }
+      return anonymizeFull(text, spans);
+    };
+    const { bytes, result } = await redactPdf(
+      readAsArrayBuffer("web/test-fixtures/pdf/chromium-hebrew.pdf"),
+      withName,
+    );
+    expect(result.key.some((r) => r.type === "PERSON" && r.original === NAME)).toBe(true);
+    // Re-extract: the name is gone (redactPdf would have thrown on self-verify otherwise).
+    const reExtracted = await extractPdfMapped(bytes.buffer.slice(0) as ArrayBuffer);
+    expect(reExtracted.text).not.toContain(NAME);
   });
 });
 

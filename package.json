@@ -21,9 +21,10 @@
     "test:watch": "vitest",
     "preview:e2e": "vite preview --config web/vite.config.ts --port 4173 --strictPort",
     "fixtures:pdf": "node web/test-fixtures/build-pdf-fixtures.mjs",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --grep-invert @model",
     "pretest:e2e": "npm run fixtures:pdf",
-    "pretest": "npm run fixtures:pdf"
+    "pretest": "npm run fixtures:pdf",
+    "test:e2e:model": "playwright test --grep @model"
   },
   "dependencies": {
     "@huggingface/transformers": "4.2.0",
