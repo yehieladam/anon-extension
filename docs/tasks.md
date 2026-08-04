@@ -143,7 +143,7 @@ a blocker. The Mechikon build stays in THIS repo (open-source/AGPL), never merge
   Owner: unassigned
   Scope: the killer use case both competitors monetize (see `docs/differentiation.md`) — strip PII → send sanitized text to ChatGPT/Claude → paste the answer back → real values restored. All in-browser; the token→value map lives only in the tab.
   DoD: full round-trip works on a real doc + its key; restored answer matches originals; missing-key handled explicitly.
-- [ ] **P2W-04** "Zero network" proof surface (turn the privacy claim into something verifiable) — **BLOCKING GATE before any deploy**
+- [x] **P2W-04** "Zero network" proof surface — **DONE 2026-08-04 (PR #33).** `web/src/lib/networkMonitor.ts` patches fetch/XHR/sendBeacon/WebSocket/EventSource; the badge is a live `useSyncExternalStore` counter (emerald at 0, amber if it climbs). Worker-side model-fetch surfacing is a P4-02 follow-up.
   Owner: yehieladam
   Scope: small badge/panel stating "0 network requests (except the one-time model download)". **⚠️ Code review 2026-08-04:** the shell currently renders a STATIC "0 בקשות רשת" badge (`web/src/App.tsx`, commented as a placeholder). `docs/trust.md`: "a trust surface that lies once is dead forever." The badge MUST reflect real observed network state before the site is ever deployed — a static badge that could show "0" while a request happened is disqualifying for this audience.
   DoD: badge reflects real observed state; no false claim; visible in the UI. **Nothing ships to a public URL until this is real.**
@@ -181,14 +181,14 @@ a blocker. The Mechikon build stays in THIS repo (open-source/AGPL), never merge
 
 ## P3 — files (no PDF — see separate track)
 
-- [~] **P3-01** DOCX in/out (mammoth read, `docx` write with placeholders)
+- [x] **P3-01** DOCX in/out — **OVERLAY redaction, DONE 2026-08-04 (PR pending)**
   Owner: yehieladam
-  Scope: **READ wired** — `web/src/worker/extract.ts` uses mammoth (lazy) to extract docx text → anonymize → show. REMAINING: docx WRITE (download an anonymized .docx with placeholders in place), not just text output.
-  DoD: read ✅ (via the file-upload flow); write (download) pending.
-- [~] **P3-02** XLSX in/out (SheetJS read + write)
+  Scope: **not a rebuild — an OVERLAY.** The uploaded .docx is opened as a zip; only its `<w:t>` text runs are rewritten with placeholders in place, every other part (logo, letterhead, styles, headers/footers) is repacked byte-for-byte — official files stay official. One detection pass over the whole document (body+headers+footers) so `[שם_1]` means the same person everywhere and the key stays restorable. PII split across runs (Word does this) handled by the overlay char-walk. Core in `engine/src/overlay.ts` (pure, 7 unit tests); zip/XML in `web/src/worker/officeRedact.ts`.
+  DoD: read ✅; write ✅ — integration test builds a real docx (logo + phone split across 3 runs), redacts, asserts PII→placeholder, raw PII gone, **logo byte-identical**, restore round-trips. Browser E2E verified: upload → download `name_מושחר.docx` → all PII replaced, logo preserved.
+- [x] **P3-02** XLSX in/out — **OVERLAY redaction, DONE 2026-08-04 (PR pending)**
   Owner: yehieladam
-  Scope: **READ wired + VERIFIED** — SheetJS (lazy) extracts sheet text → anonymize → show (screenshot-tested with a Hebrew PII sheet: ID/phone/email detected). REMAINING: xlsx WRITE, and guard integer-looking cells from a spurious `.0` (server lesson).
-  DoD: read ✅; write + `.0` guard pending.
+  Scope: same overlay approach on `xl/sharedStrings.xml` `<t>` nodes (grouped per `<si>`); other parts preserved. **Known gap (documented):** PII stored as NUMERIC cells (not shared strings) and inline sheet strings are not yet redacted — follow-up. No `.0` issue since we never re-serialize numbers.
+  DoD: read ✅; write ✅ — integration test asserts shared-string PII→placeholder, untouched strings kept, media preserved. `.0` guard N/A (overlay, not regenerate).
 
 ## P4 — warm model + self-host
 

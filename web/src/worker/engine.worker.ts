@@ -13,17 +13,19 @@ import { restore } from "@engine/restore";
 import type { AnonymizeResult } from "@engine/types";
 import type { KeyRow } from "@engine/types";
 import type { RestoreResult } from "@engine/restore";
-import { extractText } from "./extract";
+import { redactFile, type FileRedaction } from "./officeRedact";
 
 const api = {
   /** Detect (deterministic) → resolve → anonymize. Instant, no model. */
   anonymize(text: string): AnonymizeResult {
     return anonymizeDeterministic(text);
   },
-  /** Extract text from an uploaded file (docx/xlsx/pdf) then anonymize it. */
-  async anonymizeFile(fileName: string, buffer: ArrayBuffer): Promise<AnonymizeResult> {
-    const text = await extractText(fileName, buffer);
-    return anonymizeDeterministic(text);
+  /**
+   * Process an uploaded file: overlay-redact the ORIGINAL (docx/xlsx keep logo/layout; txt/csv plain)
+   * and return both the detection result and the redacted bytes to download. pdf/xls detect only.
+   */
+  redactFile(fileName: string, buffer: ArrayBuffer): Promise<FileRedaction> {
+    return redactFile(fileName, buffer);
   },
   /** Put original values back using the key (tolerant matcher). */
   restore(text: string, key: readonly KeyRow[]): RestoreResult {
