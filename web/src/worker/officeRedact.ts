@@ -18,6 +18,12 @@ import { anonymizeDeterministic } from "@engine/pipeline";
 import { applyOverlay, toReplacements, type Segment } from "@engine/overlay";
 import { extractText } from "./extract";
 
+/**
+ * How to anonymize the document's text. Injected so the caller decides deterministic-only vs full
+ * (with NER names) — when the model is loaded, files get names redacted too. May be async (NER is).
+ */
+export type Anonymize = (text: string) => AnonymizeResult | Promise<AnonymizeResult>;
+
 export interface RedactedFile {
   readonly bytes: Uint8Array;
   readonly result: AnonymizeResult;
@@ -116,11 +122,12 @@ function countBefore(starts: readonly number[], pos: number): number {
  * concatenated stream, then splice the redacted text back into each part. Returns the new part
  * strings plus the AnonymizeResult (for the UI chips + restore key).
  */
-function redactParts(
+async function redactParts(
   parts: ReadonlyArray<{ path: string; content: string }>,
   tag: string,
   groupTag: string,
-): { updated: Map<string, string>; result: AnonymizeResult } {
+  anonymize: Anonymize,
+): Promise<{ updated: Map<string, string>; result: AnonymizeResult }> {
   const allNodes: TextNode[] = [];
   const segments: Segment[] = [];
   let concat = "";
@@ -140,7 +147,7 @@ function redactParts(
     });
   });
 
-  const result = anonymizeDeterministic(concat);
+  const result = await anonymize(concat);
   const rewritten = applyOverlay(concat, segments, toReplacements(concat, result));
 
   // Splice each node's new text back, per part, from the last node to the first so offsets hold.
@@ -177,6 +184,7 @@ async function redactOffice(
   order: (name: string) => number,
   tag: string,
   groupTag: string,
+  anonymize: Anonymize,
 ): Promise<RedactedFile> {
   const zip = await loadZip(buffer);
   const paths = Object.keys(zip.files)
@@ -185,7 +193,7 @@ async function redactOffice(
   const parts = await Promise.all(
     paths.map(async (path) => ({ path, content: await zip.files[path].async("string") })),
   );
-  const { updated, result } = redactParts(parts, tag, groupTag);
+  const { updated, result } = await redactParts(parts, tag, groupTag, anonymize);
   for (const [path, content] of updated) {
     zip.file(path, content);
   }
@@ -207,37 +215,42 @@ function numberIn(name: string): number {
 }
 
 /** Redact a .docx by overlaying placeholders onto its `<w:t>` runs, preserving everything else. */
-export function redactDocx(buffer: ArrayBuffer): Promise<RedactedFile> {
-  return redactOffice(buffer, (name) => DOCX_PART.test(name), docxOrder, "w:t", "w:p");
+export function redactDocx(buffer: ArrayBuffer, anonymize: Anonymize = anonymizeDeterministic): Promise<RedactedFile> {
+  return redactOffice(buffer, (name) => DOCX_PART.test(name), docxOrder, "w:t", "w:p", anonymize);
 }
 
 /** Redact a .xlsx by overlaying placeholders onto its shared-string `<t>` nodes. */
-export function redactXlsx(buffer: ArrayBuffer): Promise<RedactedFile> {
-  return redactOffice(buffer, (name) => name === "xl/sharedStrings.xml", () => 0, "t", "si");
+export function redactXlsx(buffer: ArrayBuffer, anonymize: Anonymize = anonymizeDeterministic): Promise<RedactedFile> {
+  return redactOffice(buffer, (name) => name === "xl/sharedStrings.xml", () => 0, "t", "si", anonymize);
 }
 
 /** Anonymize a plain-text buffer and return it as bytes (txt / csv — no formatting to preserve). */
-function redactPlainText(buffer: ArrayBuffer): FileRedaction {
-  const result = anonymizeDeterministic(new TextDecoder().decode(buffer));
+async function redactPlainText(buffer: ArrayBuffer, anonymize: Anonymize): Promise<FileRedaction> {
+  const result = await anonymize(new TextDecoder().decode(buffer));
   return { result, bytes: new TextEncoder().encode(result.anonymizedText) };
 }
 
 /**
  * Process an uploaded file: overlay-redact when we can rewrite the format, otherwise fall back to
- * detection-only (still shows PII + enables restore). Routed by extension.
+ * detection-only (still shows PII + enables restore). Routed by extension. `anonymize` is injected so
+ * files pick up NER names once the model is loaded (defaults to deterministic-only).
  */
-export async function redactFile(fileName: string, buffer: ArrayBuffer): Promise<FileRedaction> {
+export async function redactFile(
+  fileName: string,
+  buffer: ArrayBuffer,
+  anonymize: Anonymize = anonymizeDeterministic,
+): Promise<FileRedaction> {
   const ext = fileName.toLowerCase().split(".").pop() ?? "";
   switch (ext) {
     case "docx":
-      return redactDocx(buffer);
+      return redactDocx(buffer, anonymize);
     case "xlsx":
-      return redactXlsx(buffer);
+      return redactXlsx(buffer, anonymize);
     case "txt":
     case "csv":
-      return redactPlainText(buffer);
+      return redactPlainText(buffer, anonymize);
     default:
       // pdf, xls: detect + preview only (no redacted download from here yet).
-      return { result: anonymizeDeterministic(await extractText(fileName, buffer)) };
+      return { result: await anonymize(await extractText(fileName, buffer)) };
   }
 }

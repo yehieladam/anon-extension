@@ -16,10 +16,17 @@ const COEP = "require-corp";
 
 /**
  * Strict CSP — the browser-enforced backbone of the "nothing leaves the device" promise (TR-01).
- * `connect-src` is locked to self + the model host so PII cannot be exfiltrated even if a bundled
- * dependency were compromised. `wasm-unsafe-eval` is needed by onnxruntime-web; `worker-src blob:`
- * for its workers. When the model self-hosts on R2 (P4-02), collapse `connect-src` to `'self'`.
- * Keep this in sync with web/vercel.json.
+ * `connect-src` is locked to self + the model/runtime asset hosts so PII cannot be exfiltrated even if
+ * a bundled dependency were compromised (these hosts serve GETs for the model + wasm; PII is never
+ * sent anywhere). `wasm-unsafe-eval` is needed by onnxruntime-web; `worker-src blob:` for its workers.
+ *
+ * Hosts (verified live 2026-08-04): huggingface.co (model resolve) + *.hf.co (the actual model bytes
+ * now come from the Xet CDN, e.g. us.aws.cdn.hf.co — regional, hence the wildcard) + cdn.jsdelivr.net
+ * (onnxruntime-web wasm binaries, transformers.js default `wasmPaths`).
+ *
+ * HARDENING (P4-02): self-host the model on R2 AND vendor the ORT wasm locally, then collapse
+ * `connect-src` to `'self'` — removing every third-party runtime dependency. Keep in sync with
+ * web/vercel.json.
  */
 const CSP = [
   "default-src 'self'",
@@ -27,12 +34,15 @@ const CSP = [
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'none'",
-  "script-src 'self' 'wasm-unsafe-eval'",
+  // blob: — onnxruntime-web's threaded backend executes its worker bootstrap from a blob URL (the
+  // blob is minted same-origin via createObjectURL, so this does not widen the origin's trust).
+  "script-src 'self' 'wasm-unsafe-eval' blob:",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self'",
   "worker-src 'self' blob:",
-  "connect-src 'self' https://huggingface.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co",
+  // blob: — onnxruntime-web's threaded backend fetches its wasm / spawns workers via blob URLs.
+  "connect-src 'self' blob: https://huggingface.co https://*.hf.co https://cdn.jsdelivr.net",
 ].join("; ");
 
 /**
