@@ -91,5 +91,10 @@ export default defineConfig({
   },
   optimizeDeps: {
     esbuildOptions: { target: "es2022" },
+    // mupdf loads its wasm via `new URL("mupdf-wasm.wasm", import.meta.url)`. When Vite pre-bundles it
+    // into .vite/deps that URL 404s in dev (the SPA fallback returns index.html, not wasm). Excluding
+    // it keeps mupdf served from node_modules so the relative wasm path resolves. Dev-only; the
+    // production build bundles the wasm correctly either way.
+    exclude: ["mupdf"],
   },
 });
