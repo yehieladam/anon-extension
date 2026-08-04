@@ -313,7 +313,7 @@ Never a black box over live text.
   const bytes = doc.saveToBuffer({ garbage: "deduplicate", compress: true, sanitize: true }).asUint8Array();
   // NEVER { incremental: true }; NEVER a plain save without garbage — both LEAK.
   ```
-  DoD: real Hebrew PDF in → truly redacted PDF out; **3-layer acceptance test enforced in code** (byte-scan is the gate; self-verify, assert no PII); RTL correct.
+  DoD: ✅ **DONE 2026-08-04 (managed by Fable 5).** `web/src/worker/pdfRedact.ts::redactPdf` — detection on the mapped logical text → per-line rects from glyph quads → Redact annots + `applyRedactions(REDACT_IMAGE_PIXELS/LINE_ART_NONE/TEXT_REMOVE)` → save `{garbage:"deduplicate",compress,sanitize}` → **in-production 3-layer self-verify before return** (layer A re-extracts through pdfText, not raw asText; a leak throws). Wired into `officeRedact` (`case "pdf"`, lazy). Node tests: real fixture ID+phone removed + 3 layers; **save-matrix guard** (`pdfSaveMatrix.test.ts`) proves `{}`/`{compress}` LEAK on a base-font PDF and that our layer B catches it (garbage is mandatory, not defensive); NER name-span redaction proven model-free. **Browser gate (`web/tests/pdf.spec.ts`, CI):** upload → download → 3 layers on the downloaded bytes with the model host blocked (offline + zero non-self on the PDF path). `@model` name-in-PDF spec runs locally pre-deploy (needs a warm model cache; HF cold download is flaky).
 - [x] **PDF-05a** Spike — scanned-image redaction + Hebrew OCR feasibility (**DONE, GO**; `feat/pdf-05a-spike`, `spikes/pdf-05a/FINDINGS.md`)
   Owner: yehieladam (spike)
   Result: native `applyRedactions(true, REDACT_IMAGE_PIXELS, REDACT_LINE_ART_NONE, REDACT_TEXT_REMOVE)` + PII rects + `{garbage:"deduplicate",compress:true,sanitize:true}` → true pixel destruction of only the PII regions (image kept). `REDACT_IMAGE_REMOVE` wipes the whole image — do NOT use. OCR (tessdata_best `heb`+`eng`, PSM 6): clean 150/300 DPI = 96.6% char acc, all PII; **noisy scan missed a name** (leak). Weight: ~21 MiB (tesseract 2.73 + heb 3.53 + **eng 14.69, required for digits**).
@@ -324,7 +324,8 @@ Never a black box over live text.
 - [ ] **PDF-06** PDF sanitize pass — metadata & non-visible leak channels (Fable 5)
   Owner: unassigned
   Scope: redaction ≠ sanitization. Strip/clean: Info dict + **XMP metadata**, embedded files/attachments, annotation contents, form field values, **bookmarks/outlines** (often carry party names in legal PDFs), image EXIF/XMP.
-  DoD: raw-byte scan of output finds none of the above; unit fixtures per channel.
+  **Also (found in PDF-04, 2026-08-04): layer B is BLIND to PII stored as glyph IDs in a CID/Type0 font** (Word/Chrome subset fonts — the common real-world case). Today the guard there is garbage-save (removes the orphan) + layer A (re-extract sees the removal). Full byte-level closure needs decoding glyph IDs back to Unicode via the font's cmap/ToUnicode before the byte scan — bring into PDF-06 scope.
+  DoD: raw-byte scan of output finds none of the above; layer B (or a cmap-aware variant) catches CID-glyph-stored PII on a Word/Chrome fixture; unit fixtures per channel.
 
 ## OCR — Hebrew accuracy & honesty (extends P6, gates scan mode)
 

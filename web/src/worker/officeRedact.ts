@@ -249,8 +249,14 @@ export async function redactFile(
     case "txt":
     case "csv":
       return redactPlainText(buffer, anonymize);
+    case "pdf": {
+      // Overlay redaction on the original PDF (true removal + self-verify). Lazy import so mupdf loads
+      // only when a PDF is actually processed (P0I-02) and to break the officeRedact↔pdfRedact cycle.
+      const { redactPdf } = await import("./pdfRedact");
+      return redactPdf(buffer, anonymize);
+    }
     default:
-      // pdf, xls: detect + preview only (no redacted download from here yet).
+      // xls (legacy binary, not a zip): detect + preview only, no redacted download.
       return { result: await anonymize(await extractText(fileName, buffer)) };
   }
 }
