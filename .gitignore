@@ -22,3 +22,5 @@ Thumbs.db
 # scratch
 scratchpad/
 tmp/
+
+dist-web/
