@@ -534,7 +534,11 @@ export function App() {
                 <button
                   type="button"
                   onClick={() => setShowManualInput((v) => !v)}
-                  className="inline-flex items-center gap-1 rounded-full border border-dashed border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 transition hover:border-ink hover:text-ink"
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition ${
+                    showManualInput
+                      ? "bg-ink text-white"
+                      : "border border-hairline bg-white text-ink shadow-sm hover:bg-surface"
+                  }`}
                 >
                   {t("manual.add")}
                 </button>
