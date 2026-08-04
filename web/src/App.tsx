@@ -196,24 +196,34 @@ export function App() {
     }
     let cancelled = false;
     void (async () => {
-      if (source.kind === "text") {
-        const upgraded = await getEngine().anonymizeSmart(source.text, manualTerms);
-        if (!cancelled) {
-          showResult(upgraded);
+      try {
+        if (source.kind === "text") {
+          const upgraded = await getEngine().anonymizeSmart(source.text, manualTerms);
+          if (!cancelled) {
+            showResult(upgraded);
+          }
+          return;
         }
-        return;
-      }
-      const { result: upgraded, bytes } = await getEngine().redactFile(
-        source.name,
-        source.buffer,
-        manualTerms,
-      );
-      if (cancelled) {
-        return;
-      }
-      showResult(upgraded);
-      if (bytes) {
-        setRedacted({ bytes, name: redactedName(source.name), mime: mimeFor(source.name) });
+        const { result: upgraded, bytes } = await getEngine().redactFile(
+          source.name,
+          source.buffer,
+          manualTerms,
+        );
+        if (cancelled) {
+          return;
+        }
+        showResult(upgraded);
+        if (bytes) {
+          setRedacted({ bytes, name: redactedName(source.name), mime: mimeFor(source.name) });
+        }
+      } catch {
+        // The NER-pass redaction failed (e.g. the PDF self-verify refused a leaky result). Never leave
+        // the earlier deterministic-only download in place — that would hand back a file the user
+        // believes is fully redacted but whose names are not removed. Surface the error and pull it.
+        if (!cancelled) {
+          setFileError(true);
+          setRedacted(null);
+        }
       }
     })();
     return () => {
@@ -228,6 +238,7 @@ export function App() {
         return;
       }
       setStatus(source.kind === "file" ? "reading" : "working");
+      setFileError(false);
       try {
         if (source.kind === "text") {
           showResult(await getEngine().anonymizeSmart(source.text, terms));
@@ -238,6 +249,11 @@ export function App() {
             setRedacted({ bytes, name: redactedName(source.name), mime: mimeFor(source.name) });
           }
         }
+      } catch {
+        // A manual term re-triggered redaction that failed — pull any stale download so the user never
+        // saves a file that is not actually fully redacted.
+        setFileError(true);
+        setRedacted(null);
       } finally {
         setStatus(null);
       }
