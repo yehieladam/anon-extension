@@ -30,6 +30,7 @@ export { resolveOverlaps } from "./resolve";
 export { anonymize, placeholderFor } from "./anonymize";
 export { fromCsv, fromKeyFile, toCsv, toKeyFile } from "./key";
 export type { KeyFile } from "./key";
+export { restore } from "./restore";
+export type { RestoreResult } from "./restore";
 // TODO(P1-11): export the NER wrapper from "./ner" (tokenizer /u shim + offset/## fixes —
 //              see browser-poc/PHASE0_FINDINGS.md; mandatory, not optional)
-// TODO(P1-15): export restore from "./restore" (restore IS in the MVP — docs/tasks.md)

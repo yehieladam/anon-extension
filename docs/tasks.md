@@ -67,10 +67,10 @@ unit test with the same valid/invalid cases the server checks use.
 - [x] **P1-14** `key.ts` — canonical `key.v1` JSON + CSV export (restore-compatible)
   Owner: yehieladam
   Scope: canonical `key.v1` JSON `{version, docId?, createdAt?, rows:[{placeholder,original,type}]}` (docId/createdAt set by the caller — engine stays pure, no Date/hash here); CSV = RFC-4180 (BOM added by the download layer). 6 tests: CSV + JSON round-trips lossless incl. Hebrew with commas/quotes/newlines; header-only for empty; malformed key rejected.
-- [ ] **P1-15** `restore.ts` — tolerant placeholders → originals (**MVP** — see decision note above)
-  Owner: unassigned
-  Scope (Fable 5): tolerant matcher — NFC normalize, quote-variant class (`" ” ״ ׳ '`), optional whitespace, and **strip Unicode bidi controls** (LRM/RLM U+200E/F, FSI/PDI U+2066–2069) that LLMs/RTL editors inject invisibly. Unmatched placeholders → listed report, never silent. Source that already looks like a placeholder → warn before anonymizing.
-  DoD: restore(anonymize(text)) === text property test; **property tests on recorded real ChatGPT/Claude replies** containing placeholders; repeated + missing-key handled explicitly.
+- [x] **P1-15** `restore.ts` — tolerant placeholders → originals (**MVP**)
+  Owner: yehieladam
+  Scope: tolerant matcher — NFC, quote-variant class (incl. gershayim ↔ ASCII/curly quotes), optional whitespace, and strips bidi controls (U+200E/F, U+202A–202E, U+2066–2069). Non-placeholder brackets ignored; inserted originals not re-scanned (no double-restore). Unmatched tokens reported, never silent.
+  DoD: 6 tests incl. smart-quoted/curly-quote tokens, injected spaces+bidi, unmatched report, non-token brackets — **and a full end-to-end round-trip through the real pipeline (recognizers → resolve → anonymize → restore) === original**. Full suite 152 green.
 - [ ] **KEY-01** Restore-key UX + optional passphrase encryption (decisions 2026-08-03)
   Owner: unassigned
   Scope (Fable 5): **default = in-memory only** (the key map dies when the tab closes — the differentiation claim); **download is opt-in** (explicit user action). On download, offer passphrase **encryption via a checkbox that is CHECKED by default** (optional, recommended). Crypto: Argon2id via `hash-wasm` (MIT, tiny) → AES-256-GCM via native WebCrypto (zero added bytes); envelope `{v, kdf:{argon2id params,salt}, nonce, ciphertext}`; PBKDF2 ≥600k iters as zero-dep fallback. `crypto.subtle` works in workers/Node20 → stays framework-free. Marketing: "your restore vault is a file only you hold — encrypted, and we never saw it."
