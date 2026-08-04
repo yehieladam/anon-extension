@@ -10,9 +10,10 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { extractPdfMapped } from "./pdfRedact";
-import { detectDeterministic } from "@engine/pipeline";
+import { extractPdfMapped, redactPdf } from "./pdfRedact";
+import { anonymizeDeterministic, detectDeterministic } from "@engine/pipeline";
 import { quadsForSpan, refsToRects } from "@engine/pdfText";
+import { layerB, layerC } from "@engine/pdfVerify";
 
 function readAsArrayBuffer(relPath: string): ArrayBuffer {
   const abs = fileURLToPath(new URL(`../../../${relPath}`, import.meta.url));
@@ -62,6 +63,60 @@ describe("extractPdfMapped — real (Chromium-shaped) fixture", () => {
     // (option A) would reverse the letters into a wrong, undetectable name. This guards the decision.
     expect(xs).toEqual([...xs].sort((a, b) => b - a));
     expect(xs).not.toEqual([...xs].sort((a, b) => a - b));
+  });
+});
+
+describe("redactPdf — true removal + in-production self-verify (real fixture)", () => {
+  it("removes detected ID + phone, and the redacted bytes pass all three layers", async () => {
+    // redactPdf self-verifies internally: if it returns, the 3-layer check already passed.
+    const { bytes, result } = await redactPdf(
+      readAsArrayBuffer("web/test-fixtures/pdf/chromium-hebrew.pdf"),
+      anonymizeDeterministic,
+    );
+    const originals = result.key.map((r) => r.original);
+    expect(originals).toContain("123456709"); // ID was detected...
+    expect(originals).toContain("052-1234567"); // ...and phone
+
+    // Re-extract the redacted PDF: the values are gone from the readable text.
+    const reExtracted = await extractPdfMapped(bytes.buffer.slice(0) as ArrayBuffer);
+    expect(reExtracted.text).not.toContain("123456709");
+    expect(reExtracted.text).not.toContain("052-1234567");
+
+    // And gone from the raw bytes (incl. inflated streams) — the true gate.
+    const b = await layerB(bytes, originals);
+    expect(b.pass).toBe(true);
+  });
+
+  it("proves an incremental save would FAIL the byte scan — guards SAFE_SAVE_OPTIONS", async () => {
+    // Replicate the redaction but save INCREMENTALLY; the append keeps the pre-redaction objects
+    // recoverable and layer B catches the PII. This is why SAFE_SAVE_OPTIONS (full rewrite + garbage)
+    // must never be weakened.
+    // reason: mupdf's WASM surface is untyped; narrowly used to build a leaky-save counter-example.
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const mupdf = (await import("mupdf")) as any;
+    const src = new Uint8Array(
+      fs.readFileSync(fileURLToPath(new URL("../../../web/test-fixtures/pdf/chromium-hebrew.pdf", import.meta.url))),
+    );
+    const doc = mupdf.PDFDocument.openDocument(src, "application/pdf");
+    const mapped = await extractPdfMapped(src.buffer.slice(0) as ArrayBuffer);
+    const result = anonymizeDeterministic(mapped.text);
+    const rects = result.spans.flatMap((s) => refsToRects(quadsForSpan(mapped, s.start, s.end)));
+    const P = mupdf.PDFPage;
+    for (const r of rects) {
+      const page = doc.loadPage(r.pageIndex);
+      const annot = page.createAnnotation("Redact");
+      annot.setRect([r.x0, r.y0, r.x1, r.y1]);
+      annot.update();
+    }
+    doc.loadPage(0).applyRedactions(true, P.REDACT_IMAGE_PIXELS, P.REDACT_LINE_ART_NONE, P.REDACT_TEXT_REMOVE);
+    const leaky = new Uint8Array(doc.saveToBuffer({ incremental: true }).asUint8Array());
+    // An incremental save appends a second body+xref, leaving the pre-redaction generation
+    // recoverable — layer C sees more than one %%EOF/startxref and rejects it. redactPdf's
+    // self-verify runs exactly this check, so it can never return an incrementally-saved file.
+    const c = layerC(leaky);
+    expect(c.pass).toBe(false);
+    expect(c.eofCount).toBeGreaterThan(1);
+    /* eslint-enable @typescript-eslint/no-explicit-any */
   });
 });
 
