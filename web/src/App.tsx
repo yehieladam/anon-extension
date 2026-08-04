@@ -1,10 +1,16 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { AnonymizeResult } from "@engine/types";
 import type { EntityType } from "@engine/types";
 import type { RestoreResult } from "@engine/restore";
 import { getEngine } from "./worker/engineClient";
 import { useNetworkCount } from "./lib/useNetworkCount";
+import { loadNer, useNer } from "./worker/nerController";
+
+/** What produced the current result — so we can re-run it with NER once the model is ready. */
+type Source =
+  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "file"; readonly name: string; readonly buffer: ArrayBuffer };
 
 /** AGPL-3.0 §13: users interacting over a network must be offered the corresponding source. */
 const SOURCE_URL = "https://github.com/yehieladam/anon-extension";
@@ -68,8 +74,10 @@ function highlight(text: string): ReactNode[] {
 export function App() {
   const { t } = useTranslation();
   const networkCount = useNetworkCount();
+  const ner = useNer();
 
   const [input, setInput] = useState("");
+  const [source, setSource] = useState<Source | null>(null);
   const [status, setStatus] = useState<null | "working" | "reading">(null);
   const [result, setResult] = useState<AnonymizeResult | null>(null);
   const [copied, setCopied] = useState(false);
@@ -96,8 +104,11 @@ export function App() {
     }
     setStatus("working");
     setFileError(false);
+    setSource({ kind: "text", text });
     try {
-      showResult(await getEngine().anonymize(text));
+      // Instant deterministic (or full, if the model is already loaded), then load NER for names.
+      showResult(await getEngine().anonymizeSmart(text));
+      void loadNer();
     } finally {
       setStatus(null);
     }
@@ -112,11 +123,13 @@ export function App() {
       setFileError(false);
       try {
         const buffer = await file.arrayBuffer();
+        setSource({ kind: "file", name: file.name, buffer });
         const { result: anonymized, bytes } = await getEngine().redactFile(file.name, buffer);
         showResult(anonymized);
         if (bytes) {
           setRedacted({ bytes, name: redactedName(file.name), mime: mimeFor(file.name) });
         }
+        void loadNer();
       } catch {
         setFileError(true);
       } finally {
@@ -125,6 +138,37 @@ export function App() {
     },
     [busy, showResult],
   );
+
+  // When the model finishes loading, re-run whatever is on screen so names get redacted too.
+  const previousNerStatus = useRef(ner.status);
+  useEffect(() => {
+    const wasReady = previousNerStatus.current === "ready";
+    previousNerStatus.current = ner.status;
+    if (ner.status !== "ready" || wasReady || source === null) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      if (source.kind === "text") {
+        const upgraded = await getEngine().anonymizeSmart(source.text);
+        if (!cancelled) {
+          showResult(upgraded);
+        }
+        return;
+      }
+      const { result: upgraded, bytes } = await getEngine().redactFile(source.name, source.buffer);
+      if (cancelled) {
+        return;
+      }
+      showResult(upgraded);
+      if (bytes) {
+        setRedacted({ bytes, name: redactedName(source.name), mime: mimeFor(source.name) });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ner.status, source, showResult]);
 
   const onDownload = useCallback(() => {
     if (!redacted) {
@@ -200,6 +244,9 @@ export function App() {
             aria-hidden="true"
           />
           {t("trust.badge.count", { count: networkCount })}
+          {ner.modelRequests > 0 && (
+            <span className="text-zinc-300">· {t("trust.badge.model", { count: ner.modelRequests })}</span>
+          )}
         </span>
       </header>
 
@@ -268,6 +315,23 @@ export function App() {
           <p className={`mt-3 px-2 text-xs ${fileError ? "text-amber-600" : "text-zinc-400"}`}>
             {statusLine}
           </p>
+          {ner.status === "loading" && (
+            <div className="mt-3 rounded-2xl border border-hairline bg-surface px-4 py-3" aria-live="polite">
+              <div className="flex items-center justify-between gap-3 text-xs text-zinc-600">
+                <span>{t("ner.loading")}</span>
+                <span className="tabular-nums text-zinc-400">{ner.progress}%</span>
+              </div>
+              <div className="mt-2 h-1 overflow-hidden rounded-full bg-hairline">
+                <div
+                  className="h-full rounded-full bg-ink transition-[width] duration-300"
+                  style={{ width: `${ner.progress}%` }}
+                />
+              </div>
+            </div>
+          )}
+          {ner.status === "error" && (
+            <p className="mt-3 px-2 text-xs text-amber-600">{t("ner.error")}</p>
+          )}
         </section>
 
         {result && (
@@ -338,7 +402,9 @@ export function App() {
                 >
                   {highlight(result.anonymizedText)}
                 </div>
-                <p className="mt-3 text-xs leading-relaxed text-zinc-400">{t("result.note")}</p>
+                <p className="mt-3 text-xs leading-relaxed text-zinc-400">
+                  {ner.status === "ready" ? t("result.noteNames") : t("result.note")}
+                </p>
               </>
             )}
           </section>

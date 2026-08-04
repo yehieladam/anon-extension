@@ -130,6 +130,12 @@ export interface HebrewNerOptions {
   /** WASM by default — it beats WebGPU on integrated GPUs (Phase-0 finding). */
   readonly device?: "wasm" | "webgpu";
   readonly progressCallback?: (event: unknown) => void;
+  /**
+   * WASM threads. Multi-threaded ORT needs a crossOriginIsolated context (COOP/COEP); the caller
+   * passes the right number (1 when not isolated — e.g. extension pages — else min(4, cores)).
+   * Set before the pipeline compiles.
+   */
+  readonly numThreads?: number;
 }
 
 /** Async detection facade — same span shape as the deterministic recognizers. */
@@ -144,7 +150,16 @@ export interface HebrewNer {
  */
 export async function createHebrewNer(options: HebrewNerOptions = {}): Promise<HebrewNer> {
   installTokenizerRegexShim();
-  const { pipeline } = await import("@huggingface/transformers");
+  const transformers = await import("@huggingface/transformers");
+  // Load the model from the remote host, never a same-origin /models path: a SPA dev/prod server
+  // answers /models/* with index.html (200), which transformers would try to parse as the model and
+  // fail. When the model self-hosts on R2 (P4-02) this points at that origin instead.
+  transformers.env.allowLocalModels = false;
+  const wasmBackend = transformers.env.backends.onnx.wasm;
+  if (options.numThreads !== undefined && wasmBackend) {
+    wasmBackend.numThreads = options.numThreads;
+  }
+  const { pipeline } = transformers;
   const classifier = await pipeline("token-classification", MODEL_ID, {
     device: options.device ?? "wasm",
     dtype: DTYPE,
