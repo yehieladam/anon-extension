@@ -17,9 +17,24 @@ export interface KeyFile {
   readonly rows: readonly KeyRow[];
 }
 
-/** Quote a CSV field per RFC-4180 when it contains a comma, quote, or newline. */
+/** Formula-trigger prefixes that Excel/Sheets would execute if a cell starts with one. */
+const FORMULA_PREFIX = /^[=+\-@\t\r]/;
+
+/**
+ * Escape a CSV field: neutralise spreadsheet formula injection, then quote per RFC-4180.
+ * The key holds ORIGINAL PII from the pasted document (attacker-influenceable), and Israeli phones
+ * start with `+`, so a value like `+972…` or `=HYPERLINK(...)` would run as a formula when the key
+ * CSV is opened in Excel/Sheets. We prefix such values with a single quote; `csvUnguard` strips it
+ * back on parse so the round-trip stays lossless.
+ */
 function csvEscape(field: string): string {
-  return /[",\r\n]/.test(field) ? `"${field.replace(/"/g, '""')}"` : field;
+  const guarded = FORMULA_PREFIX.test(field) ? `'${field}` : field;
+  return /[",\r\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
+}
+
+/** Reverse `csvEscape`'s formula guard: drop a leading `'` only when it precedes a formula char. */
+function csvUnguard(field: string): string {
+  return /^'[=+\-@\t\r]/.test(field) ? field.slice(1) : field;
 }
 
 /** KeyRow[] → RFC-4180 CSV (with header). No BOM here — the download layer adds it. */
@@ -80,7 +95,11 @@ export function fromCsv(csv: string): KeyRow[] {
   return rows
     .slice(1)
     .filter((r) => r.length >= 3)
-    .map((r) => ({ placeholder: r[0], original: r[1], type: r[2] as EntityType }));
+    .map((r) => ({
+      placeholder: csvUnguard(r[0]),
+      original: csvUnguard(r[1]),
+      type: csvUnguard(r[2]) as EntityType,
+    }));
 }
 
 /** KeyRow[] → canonical `key.v1` JSON (pretty). `meta` (docId/createdAt) is optional. */

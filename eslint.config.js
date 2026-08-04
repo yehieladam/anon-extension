@@ -15,6 +15,7 @@ export default tseslint.config(
       // Throwaway feasibility spikes (Node .mjs scripts), kept for reference — not product code.
       "spikes/**",
       "dist/**",
+      "dist-web/**",
       "node_modules/**",
     ],
   },
