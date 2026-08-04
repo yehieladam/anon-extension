@@ -50,9 +50,9 @@ unit test with the same valid/invalid cases the server checks use.
 - [x] **P1-09** `recognizers/israeliInsured.ts` — IL_INSURED (מספר מבוטח)
   Owner: yehieladam
   DoD: context-anchored on מבוטח; flags the number only; ignores the bare word; score 0.9; 4 tests. Server file not vendored — faithful re-impl.
-- [ ] **P1-10** `recognizers/email.ts` — EMAIL_ADDRESS (replaces Presidio's built-in)
-  Owner: unassigned
-  DoD: RFC-sane regex; tests incl. `.co.il` addresses; no false hits on plain Hebrew text.
+- [x] **P1-10** `recognizers/email.ts` — EMAIL_ADDRESS (replaces Presidio's built-in)
+  Owner: yehieladam
+  DoD: RFC-sane structural regex (local@domain.tld, TLD ≥2); 8 tests incl. `.co.il`, trailing-period exclusion, multiple, and no false hits on Hebrew prose / bare `@` / TLD-less host.
 - [ ] **P1-11** `ner.ts` — transformers.js token-classification wrapper (dictabert-ner-ONNX q8)
   Owner: unassigned
   Scope: WASM default + `numThreads=1`; the Phase-0 tokenizer `\"`/`\'` `/u` shim; reconstruct null char offsets; strip/re-join `##` wordpieces (hyphenated names). See `browser-poc/PHASE0_FINDINGS.md` — all three fixes are mandatory.
