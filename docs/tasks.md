@@ -267,9 +267,10 @@ to a server = PII leaves the device = breaks the whole promise; the VPS tool is 
 product, not this client-side one.
 
 **Engine/DOM boundary:** `mupdf.js` is pure WASM → lives in `engine/`. mupdf renders page pixmaps in
-pure WASM (feeds tesseract with no Canvas). **BUT — PDF-01 found image-pixel destruction UNVERIFIED**
-(`REDACT_IMAGE_PIXELS` did NOT erase pixels on a synthetic image fixture). So the "destroy scan pixels
-in WASM" assumption for the scanned path is NOT proven — see PDF-05 risk.
+pure WASM (feeds tesseract with no Canvas). **Image-pixel destruction VERIFIED (PDF-05a):**
+`REDACT_IMAGE_PIXELS` + the PII rects whitens only the covered pixels on a real raster scan while
+keeping the rest of the image (PDF-01's "unverified" was a fixture artifact). The whole scanned pipeline
+stays in `engine/` WASM.
 
 **⚠️ CRITICAL — save options (PROVEN in PDF-01, corrects the earlier note).** "Not incremental" is
 **necessary but NOT sufficient**. `applyRedactions` orphans the old page content stream; a plain full
@@ -290,7 +291,7 @@ Never a black box over live text.
 
 - [x] **PDF-01** Feasibility spike — **DONE, verdict GO for the text pipeline** (`feat/pdf-01-spike`, `spikes/pdf-01/FINDINGS.md`)
   Owner: yehieladam (spike)
-  Result: `mupdf` 1.28.0 does true, client-side, server-free PII removal; full 3-layer test passes on Latin AND a real Hebrew fixture (embedded Arial Type0). WASM 9.93 MiB / **3.44 MiB brotli**; ~5 ms/page Latin, ~15 ms/page Hebrew; redacted output re-opens/renders fine. **Caveat: image-pixel redaction UNVERIFIED** (gates PDF-05, not the text path); PyMuPDF #434 segfault did NOT reproduce. Exact save options handed to PDF-04.
+  Result: `mupdf` 1.28.0 does true, client-side, server-free PII removal; full 3-layer test passes on Latin AND a real Hebrew fixture (embedded Arial Type0). WASM 9.93 MiB / **3.44 MiB brotli**; ~5 ms/page Latin, ~15 ms/page Hebrew; redacted output re-opens/renders fine. (The "image-pixel redaction unverified" caveat here was later RESOLVED by PDF-05a — it works with PII rects on a real scan.) PyMuPDF #434 segfault did NOT reproduce. Exact save options handed to PDF-04.
 - [ ] **PDF-02** Feasibility spike: `tesseract.js` Hebrew OCR (GO/NO-GO gate) — use `tessdata_best` `heb`
   Owner: unassigned
   Scope: OCR synthetic scanned Hebrew pages; confirm mupdf pixmap → tesseract works with no Canvas; spike PSM 4/6, `preserve_interword_spaces`, dictionary on/off (legal names are out-of-dictionary — the dawg can "correct" a real name into a wrong one). Feeds OCR-01 harness.
@@ -308,26 +309,37 @@ Never a black box over live text.
   // NEVER { incremental: true }; NEVER a plain save without garbage — both LEAK.
   ```
   DoD: real Hebrew PDF in → truly redacted PDF out; **3-layer acceptance test enforced in code** (byte-scan is the gate; self-verify, assert no PII); RTL correct.
-- [ ] **PDF-05** Scanned-PDF (OCR) redaction ⚠️ **image-pixel destruction UNVERIFIED (PDF-01) — spike FIRST**
+- [x] **PDF-05a** Spike — scanned-image redaction + Hebrew OCR feasibility (**DONE, GO**; `feat/pdf-05a-spike`, `spikes/pdf-05a/FINDINGS.md`)
+  Owner: yehieladam (spike)
+  Result: native `applyRedactions(true, REDACT_IMAGE_PIXELS, REDACT_LINE_ART_NONE, REDACT_TEXT_REMOVE)` + PII rects + `{garbage:"deduplicate",compress:true,sanitize:true}` → true pixel destruction of only the PII regions (image kept). `REDACT_IMAGE_REMOVE` wipes the whole image — do NOT use. OCR (tessdata_best `heb`+`eng`, PSM 6): clean 150/300 DPI = 96.6% char acc, all PII; **noisy scan missed a name** (leak). Weight: ~21 MiB (tesseract 2.73 + heb 3.53 + **eng 14.69, required for digits**).
+- [ ] **PDF-05** Scanned-PDF (OCR) redaction — native `REDACT_IMAGE_PIXELS` + PII rects (method proven, PDF-05a)
   Owner: unassigned
-  Scope: PDF-01 found `REDACT_IMAGE_PIXELS` did NOT erase pixels on a synthetic image fixture. So the "let mupdf destroy the embedded scan's pixels in WASM" approach is **not proven** — before building, run a focused spike (**PDF-05a**) that redacts an actual scanned-image page and verifies pixels are gone by **re-OCR of the redacted region** (assert no text) AND visual diff. If it can't destroy scan pixels, fall back options: re-encode the page raster with the region painted, or reconsider scanned-in-v1. **This gates the "scanned OCR in v1" decision.**
-  DoD: spike proves true pixel destruction on a real scan; then scanned Hebrew PDF in → redacted output; re-OCR finds nothing; missed-text caveat surfaced. If spike fails → escalate the scanned-in-v1 scope decision.
+  Scope: OCR (heb+eng) → word boxes → map to page-space PII rects → `applyRedactions(REDACT_IMAGE_PIXELS…)` + garbage save (snippet in `spikes/pdf-05a/FINDINGS.md`). Verify by **re-OCR of the redacted region** (assert no text). Lazy-load heb+eng+tesseract only on scan use (P0I-02). **Gated on OCR-03** — a low-quality scan must refuse, never silently under-redact (PDF-05a proved noisy scans miss entities).
+  DoD: scanned Hebrew PDF in → redacted output; re-OCR of redacted regions finds nothing; low-confidence scans hit the OCR-03 refusal path.
 - [ ] **PDF-06** PDF sanitize pass — metadata & non-visible leak channels (Fable 5)
   Owner: unassigned
   Scope: redaction ≠ sanitization. Strip/clean: Info dict + **XMP metadata**, embedded files/attachments, annotation contents, form field values, **bookmarks/outlines** (often carry party names in legal PDFs), image EXIF/XMP.
   DoD: raw-byte scan of output finds none of the above; unit fixtures per channel.
 
-## OCR — Hebrew accuracy & honesty (Fable 5; extends P6, gates scan mode)
+## OCR — Hebrew accuracy & honesty (extends P6, gates scan mode)
+
+> **PDF-05a measured (seed data):** tessdata_best `heb`+`eng` (eng REQUIRED for digits — ID/phone),
+> PSM 6 — clean 150/300 DPI ≈ 96.6% char accuracy, all PII recovered; **noisy+skew 150 DPI missed a
+> name** (id/phone still caught). Confirms the leak mode is real → OCR-03 is mandatory. Weight ~21 MiB.
 
 - [ ] **OCR-01** Hebrew OCR recall harness (hard GO/NO-GO gate for scan mode)
   Owner: unassigned
-  Scope: synthetic Hebrew legal-style pages with **planted synthetic PII** → rasterize at 150/300 DPI with noise/skew/JPEG → OCR → score TWO numbers per quality tier: char accuracy AND **end-to-end PII recall** (planted entities the full engine still catches). 300 DPI is the floor; 92–96% is clean-print only — poor scans drop hard, and every miss = leak.
-  DoD: published numbers per scan-quality tier; threshold set below which scan redaction is refused.
+  Scope: synthetic Hebrew legal-style pages with **planted synthetic PII** → rasterize at 150/300 DPI with noise/skew/JPEG → OCR (heb+eng) → score TWO numbers per quality tier: char accuracy AND **end-to-end PII recall**. Extends the PDF-05a seed with more entities/tiers. Every miss = leak.
+  DoD: published numbers per scan-quality tier; **threshold set below which scan redaction is refused** (feeds OCR-03).
+- [ ] **OCR-02** Pure-TS in-engine preprocessing (adopt only what measurably lifts OCR-01 recall)
+  Owner: unassigned
+  Scope: grayscale → Otsu binarization → deskew (projection profile) → upscale to ≥300 DPI-equivalent, operating on RGBA buffers (no OpenCV.js needed) — framework-free, in `engine/`. PDF-05a showed noise/skew is exactly what breaks recall — deskew/denoise are the priority.
+  DoD: each step kept only if it improves the OCR-01 number; measured deltas recorded.
 - [ ] **OCR-02** Pure-TS in-engine preprocessing (adopt only what measurably lifts OCR-01 recall)
   Owner: unassigned
   Scope: grayscale → Otsu binarization → deskew (projection profile) → upscale to ≥300 DPI-equivalent, operating on RGBA buffers (no OpenCV.js needed) — framework-free, in `engine/`.
   DoD: each step kept only if it improves the OCR-01 number; measured deltas recorded.
-- [ ] **OCR-03** Confidence surfacing + honest refusal
+- [ ] **OCR-03** Confidence surfacing + honest refusal — **MANDATORY for scan mode (PDF-05a proved the leak)**
   Owner: unassigned
-  Scope: per-word tesseract confidence → page-level trust indicator + review UI; below the OCR-01 threshold show "we cannot reliably redact this scan" (the "real detection only" rule applied to OCR). Ties to the TR honesty story.
-  DoD: confidence visible; refusal path works; wording reviewed.
+  Scope: per-word tesseract confidence → page-level trust indicator + review UI; below the OCR-01 threshold **refuse**: "we cannot reliably redact this scan" — never a silent partial redaction (a noisy scan already missed a name in PDF-05a). The "real detection only" rule applied to OCR; ties to the TR honesty story. Blocks shipping scan mode.
+  DoD: confidence visible; refusal path works and blocks output below threshold; wording reviewed.
