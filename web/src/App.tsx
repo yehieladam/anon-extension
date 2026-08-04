@@ -355,24 +355,32 @@ export function App() {
                 ))}
               </div>
               <div className="flex items-center gap-2">
-                {redacted && (
-                  <button
-                    type="button"
-                    onClick={onDownload}
-                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-white transition hover:opacity-90"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path
-                        d="M12 4v11m0 0l-4-4m4 4l4-4M5 20h14"
-                        stroke="currentColor"
-                        strokeWidth="1.9"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    {t("result.download")}
-                  </button>
-                )}
+                {redacted &&
+                  // While the model is still loading for an uploaded file, the redacted file only has
+                  // the deterministic PII removed — names are not in it yet. Block the download until
+                  // NER has settled so nobody saves a half-redacted document (trust: no second chance).
+                  (source?.kind === "file" && ner.status === "loading" ? (
+                    <span className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-hairline px-4 text-[13px] font-medium text-zinc-400">
+                      {t("result.downloadPending")}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={onDownload}
+                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-white transition hover:opacity-90"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path
+                          d="M12 4v11m0 0l-4-4m4 4l4-4M5 20h14"
+                          stroke="currentColor"
+                          strokeWidth="1.9"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      {t("result.download")}
+                    </button>
+                  ))}
                 {result.key.length > 0 && (
                   <button
                     type="button"
