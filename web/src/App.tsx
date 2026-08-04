@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { AnonymizeResult } from "@engine/types";
-import type { EntityType } from "@engine/types";
+import type { AnonymizeResult, EntityType, KeyRow } from "@engine/types";
 import type { RestoreResult } from "@engine/restore";
+import { toKeyFile, fromKeyFile } from "@engine/key";
+import {
+  encryptKeyRows,
+  decryptKeyRows,
+  isEncryptedKeyFile,
+  type EncryptedKeyFile,
+} from "@engine/keyCrypto";
 import { getEngine } from "./worker/engineClient";
 import { useNetworkCount } from "./lib/useNetworkCount";
 import { loadNer, useNer } from "./worker/nerController";
@@ -36,6 +42,16 @@ function redactedName(fileName: string): string {
 function mimeFor(fileName: string): string {
   const ext = fileName.toLowerCase().split(".").pop() ?? "";
   return MIME_BY_EXT[ext] ?? "application/octet-stream";
+}
+
+/** Trigger a browser download of a blob under the given filename. */
+function downloadBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 /** EntityType → i18n label key, for the per-type count chips. */
@@ -89,6 +105,14 @@ export function App() {
   );
   const [restoreInput, setRestoreInput] = useState("");
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
+  // Restore-key download/upload (KEY-01): the key is in-memory by default; download is opt-in and
+  // encryption (passphrase) is on by default.
+  const [encryptKey, setEncryptKey] = useState(true);
+  const [keyPassphrase, setKeyPassphrase] = useState("");
+  const [uploadedKey, setUploadedKey] = useState<KeyRow[] | null>(null);
+  const [pendingEnc, setPendingEnc] = useState<EncryptedKeyFile | null>(null);
+  const [unlockPassphrase, setUnlockPassphrase] = useState("");
+  const [keyError, setKeyError] = useState<"wrong" | "invalid" | null>(null);
 
   const busy = status !== null;
 
@@ -188,13 +212,53 @@ export function App() {
     // reason: Comlink returns a Uint8Array<ArrayBufferLike>, which TS 5.7 will not narrow to the
     // ArrayBuffer-backed view BlobPart wants; the bytes are a plain copy, so the cast is safe.
     const blob = new Blob([redacted.bytes as BlobPart], { type: redacted.mime });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = redacted.name;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, redacted.name);
   }, [redacted]);
+
+  const onDownloadKey = useCallback(async () => {
+    if (!result || result.key.length === 0) {
+      return;
+    }
+    const content =
+      encryptKey && keyPassphrase.length > 0
+        ? JSON.stringify(await encryptKeyRows(result.key, keyPassphrase), null, 2)
+        : toKeyFile(result.key);
+    downloadBlob(new Blob([content], { type: "application/json" }), "מפתח-שחזור.json");
+  }, [result, encryptKey, keyPassphrase]);
+
+  const onUploadKey = useCallback(async (file: File | undefined) => {
+    if (!file) {
+      return;
+    }
+    setKeyError(null);
+    setPendingEnc(null);
+    try {
+      const text = await file.text();
+      const parsed: unknown = JSON.parse(text);
+      if (isEncryptedKeyFile(parsed)) {
+        setPendingEnc(parsed); // needs a passphrase to unlock
+        return;
+      }
+      setUploadedKey(fromKeyFile(text));
+    } catch {
+      setKeyError("invalid");
+    }
+  }, []);
+
+  const onUnlockKey = useCallback(async () => {
+    if (!pendingEnc) {
+      return;
+    }
+    try {
+      const rows = await decryptKeyRows(pendingEnc, unlockPassphrase);
+      setUploadedKey(rows);
+      setPendingEnc(null);
+      setUnlockPassphrase("");
+      setKeyError(null);
+    } catch {
+      setKeyError("wrong");
+    }
+  }, [pendingEnc, unlockPassphrase]);
 
   const onCopy = useCallback(async () => {
     if (!result) {
@@ -206,9 +270,11 @@ export function App() {
   }, [result]);
 
   const onRestore = useCallback(async () => {
-    const restored = await getEngine().restore(restoreInput, result?.key ?? []);
+    // Prefer an uploaded key (restore in a later/fresh session) over the in-memory session key.
+    const key = uploadedKey ?? result?.key ?? [];
+    const restored = await getEngine().restore(restoreInput, key);
     setRestoreResult(restored);
-  }, [restoreInput, result]);
+  }, [restoreInput, result, uploadedKey]);
 
   const chips = useMemo(() => {
     if (!result) {
@@ -432,6 +498,37 @@ export function App() {
                 <p className="mt-3 text-xs leading-relaxed text-zinc-400">
                   {ner.status === "ready" ? t("result.noteNames") : t("result.note")}
                 </p>
+
+                <div className="mt-4 rounded-2xl border border-hairline bg-surface p-4">
+                  <div className="text-[13px] font-medium text-ink">{t("key.title")}</div>
+                  <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("key.explain")}</p>
+                  <label className="mt-3 flex items-center gap-2 text-[13px] text-zinc-700">
+                    <input
+                      type="checkbox"
+                      checked={encryptKey}
+                      onChange={(event) => setEncryptKey(event.target.checked)}
+                      className="h-4 w-4 accent-ink"
+                    />
+                    {t("key.encrypt")}
+                  </label>
+                  {encryptKey && (
+                    <input
+                      type="password"
+                      value={keyPassphrase}
+                      onChange={(event) => setKeyPassphrase(event.target.value)}
+                      placeholder={t("key.passphrase")}
+                      className="mt-2 w-full rounded-xl border border-hairline bg-white px-3 py-2 text-[14px] outline-none placeholder:text-zinc-400"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={onDownloadKey}
+                    disabled={encryptKey && keyPassphrase.length === 0}
+                    className="mt-3 min-h-[40px] rounded-full border border-hairline px-5 text-[14px] font-medium text-ink transition hover:bg-white disabled:opacity-40"
+                  >
+                    {t("key.download")}
+                  </button>
+                </div>
               </>
             )}
           </section>
@@ -455,14 +552,51 @@ export function App() {
                 className="min-h-[120px] w-full resize-none rounded-2xl border border-hairline bg-surface p-4 text-[15px] leading-relaxed outline-none placeholder:text-zinc-400"
                 placeholder={t("restore.placeholder")}
               />
-              <button
-                type="button"
-                onClick={onRestore}
-                disabled={restoreInput.trim().length === 0}
-                className="mt-3 min-h-[44px] rounded-full border border-hairline px-5 text-[15px] font-medium text-ink transition hover:bg-surface disabled:opacity-30"
-              >
-                {t("restore.submit")}
-              </button>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={onRestore}
+                  disabled={restoreInput.trim().length === 0}
+                  className="min-h-[44px] rounded-full border border-hairline px-5 text-[15px] font-medium text-ink transition hover:bg-surface disabled:opacity-30"
+                >
+                  {t("restore.submit")}
+                </button>
+                <label className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-full px-3 text-[13px] font-medium text-zinc-600 transition hover:text-ink">
+                  {uploadedKey ? t("key.loaded", { count: uploadedKey.length }) : t("key.upload")}
+                  <input
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={(event) => {
+                      void onUploadKey(event.target.files?.[0]);
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+              {pendingEnc && (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <input
+                    type="password"
+                    value={unlockPassphrase}
+                    onChange={(event) => setUnlockPassphrase(event.target.value)}
+                    placeholder={t("key.passphrase")}
+                    className="min-w-[200px] flex-1 rounded-xl border border-hairline bg-surface px-3 py-2 text-[14px] outline-none placeholder:text-zinc-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={onUnlockKey}
+                    className="min-h-[40px] rounded-full bg-ink px-5 text-[14px] font-medium text-white transition hover:opacity-90"
+                  >
+                    {t("key.unlock")}
+                  </button>
+                </div>
+              )}
+              {keyError && (
+                <p className="mt-2 text-xs text-amber-600">
+                  {keyError === "wrong" ? t("key.wrongPassphrase") : t("key.invalid")}
+                </p>
+              )}
               {restoreResult && (
                 <>
                   <div
