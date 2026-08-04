@@ -89,8 +89,11 @@ tasks. Both rely on Claude to write most of the code. Explain what you do in pla
   client-side. Two proven rules the impl MUST follow: save with **`{garbage:"deduplicate", compress:true,
   sanitize:true}`** (a plain/`compress`-only save STILL leaks the orphaned content stream — `%%EOF` count
   is NOT a sufficient check; the **raw-byte scan is the real gate**); and locate PII by **glyph quads**,
-  not by searching extracted text (MuPDF returns Hebrew in reversed visual order). Scanned/image-pixel
-  redaction is UNVERIFIED (gates PDF-05). Fallback if a path is NO-GO: text/DOCX output — never a server.
+  not by searching extracted text (MuPDF returns Hebrew in reversed visual order). **Scanned path also GO
+  (PDF-05a):** native `REDACT_IMAGE_PIXELS` + PII rects truly whitens only the covered scan pixels; OCR
+  via `tesseract.js` (`heb`+`eng`, eng required for digits, ~21 MiB, lazy-loaded). Scans MUST refuse below
+  an OCR-confidence threshold (a noisy scan missed a name in the spike). Fallback if a path is NO-GO:
+  text/DOCX output — never a server.
 - **Tests:** **Vitest** (unit, engine, headless). **Browser tests: Playwright** — the WASM redaction/OCR
   and the 3-layer PDF acceptance test can't be verified in node-only Vitest; they run in a real browser.
   **Lint/format:** ESLint (typescript-eslint) + Prettier. **CI:** GitHub Actions.
