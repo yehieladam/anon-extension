@@ -71,8 +71,8 @@ unit test with the same valid/invalid cases the server checks use.
   Owner: yehieladam
   Scope: tolerant matcher — NFC, quote-variant class (incl. gershayim ↔ ASCII/curly quotes), optional whitespace, and strips bidi controls (U+200E/F, U+202A–202E, U+2066–2069). Non-placeholder brackets ignored; inserted originals not re-scanned (no double-restore). Unmatched tokens reported, never silent.
   DoD: 6 tests incl. smart-quoted/curly-quote tokens, injected spaces+bidi, unmatched report, non-token brackets — **and a full end-to-end round-trip through the real pipeline (recognizers → resolve → anonymize → restore) === original**. Full suite 152 green.
-- [ ] **KEY-01** Restore-key UX + optional passphrase encryption (decisions 2026-08-03)
-  Owner: unassigned
+- [x] **KEY-01** Restore-key UX + optional passphrase encryption — **DONE 2026-08-04**
+  Owner: yehieladam
   Scope (Fable 5): **default = in-memory only** (the key map dies when the tab closes — the differentiation claim); **download is opt-in** (explicit user action). On download, offer passphrase **encryption via a checkbox that is CHECKED by default** (optional, recommended). Crypto: Argon2id via `hash-wasm` (MIT, tiny) → AES-256-GCM via native WebCrypto (zero added bytes); envelope `{v, kdf:{argon2id params,salt}, nonce, ciphertext}`; PBKDF2 ≥600k iters as zero-dep fallback. `crypto.subtle` works in workers/Node20 → stays framework-free. Marketing: "your restore vault is a file only you hold — encrypted, and we never saw it."
   DoD: default in-memory (no auto-download); opt-in download works; encryption checkbox default-on; encrypt/decrypt round-trip with passphrase; wrong passphrase fails cleanly; engine unit-tested headless.
 
