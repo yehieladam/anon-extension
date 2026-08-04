@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { extractPdfMapped, redactPdf } from "./pdfRedact";
+import { extractPdfMapped, redactPdf, NO_TEXT_LAYER } from "./pdfRedact";
 import { anonymizeDeterministic, anonymizeFull, detectDeterministic } from "@engine/pipeline";
 import { quadsForSpan, refsToRects } from "@engine/pdfText";
 import { layerB, layerC } from "@engine/pdfVerify";
@@ -143,6 +143,18 @@ describe("redactPdf — NER name spans are truly removed (model-free, via inject
     // Re-extract: the name is gone (redactPdf would have thrown on self-verify otherwise).
     const reExtracted = await extractPdfMapped(bytes.buffer.slice(0) as ArrayBuffer);
     expect(reExtracted.text).not.toContain(NAME);
+  });
+});
+
+describe("redactPdf refuses a PDF with no text layer (scanned/image)", () => {
+  it("throws NO_TEXT_LAYER instead of returning a falsely-clean file", async () => {
+    // A page with graphics but NO text — mimics a scanned/image PDF (no extractable text layer).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mupdf WASM surface is untyped
+    const mupdf = (await import("mupdf")) as any;
+    const doc = new mupdf.PDFDocument();
+    doc.insertPage(-1, doc.addPage([0, 0, 200, 200], 0, doc.newDictionary(), "1 0 0 rg 0 0 200 200 re f"));
+    const bytes = new Uint8Array(doc.saveToBuffer({}).asUint8Array()).buffer;
+    await expect(redactPdf(bytes, anonymizeDeterministic)).rejects.toThrow(NO_TEXT_LAYER);
   });
 });
 

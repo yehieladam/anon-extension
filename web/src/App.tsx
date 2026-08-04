@@ -83,6 +83,7 @@ export function App() {
   const [result, setResult] = useState<AnonymizeResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [fileError, setFileError] = useState(false);
+  const [scannedNotice, setScannedNotice] = useState(false);
   const [redacted, setRedacted] = useState<{ bytes: Uint8Array; name: string; mime: string } | null>(
     null,
   );
@@ -96,6 +97,7 @@ export function App() {
     setRestoreInput(anonymized.anonymizedText);
     setRestoreResult(null);
     setRedacted(null);
+    setScannedNotice(false);
   }, []);
 
   const onAnonymize = useCallback(async () => {
@@ -122,6 +124,7 @@ export function App() {
       }
       setStatus("reading");
       setFileError(false);
+      setScannedNotice(false);
       try {
         const buffer = await file.arrayBuffer();
         setSource({ kind: "file", name: file.name, buffer });
@@ -131,8 +134,15 @@ export function App() {
           setRedacted({ bytes, name: redactedName(file.name), mime: mimeFor(file.name) });
         }
         void loadNer();
-      } catch {
-        setFileError(true);
+      } catch (error) {
+        // A scanned/image PDF has no text layer — refuse with a specific notice instead of a falsely
+        // "clean" result (the message survives Comlink from the worker).
+        if (error instanceof Error && error.message.includes("NO_TEXT_LAYER")) {
+          setSource(null);
+          setScannedNotice(true);
+        } else {
+          setFileError(true);
+        }
       } finally {
         setStatus(null);
       }
@@ -316,6 +326,14 @@ export function App() {
           <p className={`mt-3 px-2 text-xs ${fileError ? "text-amber-600" : "text-zinc-400"}`}>
             {statusLine}
           </p>
+          {scannedNotice && (
+            <div
+              className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-800"
+              role="alert"
+            >
+              {t("input.scannedPdf")}
+            </div>
+          )}
           {ner.status === "loading" && (
             <div className="mt-3 rounded-2xl border border-hairline bg-surface px-4 py-3" aria-live="polite">
               <div className="flex items-center justify-between gap-3 text-xs text-zinc-600">
