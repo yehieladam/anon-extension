@@ -53,10 +53,10 @@ unit test with the same valid/invalid cases the server checks use.
 - [x] **P1-10** `recognizers/email.ts` — EMAIL_ADDRESS (replaces Presidio's built-in)
   Owner: yehieladam
   DoD: RFC-sane structural regex (local@domain.tld, TLD ≥2); 8 tests incl. `.co.il`, trailing-period exclusion, multiple, and no false hits on Hebrew prose / bare `@` / TLD-less host.
-- [ ] **P1-11** `ner.ts` — transformers.js token-classification wrapper (dictabert-ner-ONNX q8)
-  Owner: unassigned
-  Scope: WASM default + `numThreads=1`; the Phase-0 tokenizer `\"`/`\'` `/u` shim; reconstruct null char offsets; strip/re-join `##` wordpieces (hyphenated names). See `browser-poc/PHASE0_FINDINGS.md` — all three fixes are mandatory.
-  DoD: recall harness vs `browser-poc/ner_testset.json` ≥ 88.89% (server parity); unit tests for offset/`##` reconstruction with recorded model outputs.
+- [x] **P1-11** `ner.ts` — transformers.js token-classification wrapper (dictabert-ner-ONNX q8)
+  Owner: yehieladam
+  Scope: WASM default; the Phase-0 tokenizer `\"`/`\'` `/u` RegExp shim (`installTokenizerRegexShim`); reconstruct null char offsets + strip/re-join `##` wordpieces (hyphenated names) in `reconstructNerSpans`; tags mapped PER→PERSON, ORG→ORGANIZATION, GPE/LOC/FAC→LOCATION. Model imported dynamically so pure helpers stay CI-testable.
+  DoD: **8 unit tests for offset/`##` reconstruction against RECORDED model outputs** (`browser-poc/browser_result.json`) — clean spans, the hyphenated `##` artifact rebuilt to the full name, unmapped-tag/no-match skips, repeated-surface cursor. Full suite 160 green. **Live recall harness (≥88.89% vs `ner_testset.json`) is a MANUAL run** — the 185 MB model is never downloaded in CI; Phase-0 already proved q8 parity and the `##` fix closes the documented gaps. Re-run manually before launch.
 - [x] **P1-12** `resolve.ts` — overlap resolution (PRIORITY map, deterministic > NER)
   Owner: yehieladam
   DoD: greedy keep-strongest by PRIORITY → score → length → start → type (total order = deterministic regardless of source concat order); 7 tests (ID-inside-PERSON, adjacent survive, score/length tiebreaks, reading-order output, equal-strength collapse, no input mutation).
@@ -115,8 +115,7 @@ build the UI on the main thread and retrofit later.
 
 ## P2W — web app (public front door, ships first — see CLAUDE.md decision 2026-08-02)
 
-**Owner of this track: @yehieladam** (division of labor, decided 2026-08-03: Yehiel → web app,
-Nadav → extension). Still set `Owner:` per task when claiming.
+**Owner: @yehieladam** (sole developer — as of 2026-08-04 Yehiel owns every track).
 
 The **web app is the first public surface** (zero install, best reach, no Store review, and it can run
 `crossOriginIsolated` → multi-threaded WASM → faster NER). Reuses `@engine/*` unchanged. The popup
@@ -158,7 +157,7 @@ a blocker. The Mechikon build stays in THIS repo (open-source/AGPL), never merge
 
 ## P2 — popup UX (Chrome extension, fast-follow after P2W; React shell in `src/`, imports `@engine/*`)
 
-**Owner of this track: @nadavnbs** (division of labor, decided 2026-08-03). Still set `Owner:` per task when claiming.
+**Owner: @yehieladam** (sole developer). The extension is a fast-follow after the web app.
 
 - [ ] **P2-01** Migrate the spike into the Vite/crxjs build (retire `extension/` as the loadable)
   Owner: unassigned

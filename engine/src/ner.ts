@@ -1,0 +1,167 @@
+/**
+ * Hebrew NER — `onnx-community/dictabert-ner-ONNX` (q8) via transformers.js 4.2.0. An async facade
+ * over the same `Span` shape the deterministic recognizers produce. Names/orgs/places are genuine
+ * neural detection (CLAUDE.md hard rule 1) — never used for the number entities.
+ *
+ * Carries the two MANDATORY Phase-0 fixes (browser-poc/PHASE0_FINDINGS.md):
+ *  1. `installTokenizerRegexShim()` — dictabert's pretokenizer regex uses `\"`/`\'` (Hebrew
+ *     gershayim/geresh), illegal under the `u` flag transformers.js compiles it with, so V8 rejects
+ *     it and NER never runs. We patch the global RegExp to strip only those illegal escapes from
+ *     u/v-flagged patterns.
+ *  2. `reconstructNerSpans()` — transformers.js 4.2.0 with `aggregation_strategy:'simple'` returns
+ *     null char offsets and leaves `##` wordpiece markers in the surface (truncating hyphenated
+ *     names like `רחל לוי-אברמוביץ` to `"רחל לוי ##-"`). We rebuild offsets by aligning to the
+ *     source text and extend across the `##`-truncated continuation. This pure step is unit-tested
+ *     against RECORDED model outputs (browser-poc/browser_result.json); the live model runs only in
+ *     the manual recall harness (the 185 MB model is never downloaded in CI).
+ */
+import type { NerEntityType, Span } from "./types";
+
+/** One raw span as returned by the token-classification pipeline. */
+export interface RawNerSpan {
+  /** Model tag: PER / ORG / GPE / LOC / FAC. */
+  readonly raw: string;
+  /** Surface string; may contain `##` wordpiece markers. */
+  readonly surface: string;
+  readonly score: number;
+}
+
+const TAG_MAP: Readonly<Record<string, NerEntityType>> = {
+  PER: "PERSON",
+  ORG: "ORGANIZATION",
+  GPE: "LOCATION",
+  LOC: "LOCATION",
+  FAC: "LOCATION",
+};
+
+/** Map a raw model tag to our entity type (server-style), or null to drop it. */
+export function mapNerTag(raw: string): NerEntityType | null {
+  return TAG_MAP[raw.toUpperCase()] ?? null;
+}
+
+/** Hebrew letters incl. finals (U+05D0–U+05EA) — used to extend across `##`-truncated names. */
+const HEBREW_LETTER = /[א-ת]/;
+
+/** Strip `##` wordpiece markers (optionally with a leading space) to get a searchable seed. */
+function cleanSurface(surface: string): string {
+  return surface.replace(/ ?##/g, "").trim();
+}
+
+/**
+ * Rebuild real char-offset spans from raw pipeline output aligned to `text`. Pure; processes spans
+ * in order with a running cursor so repeated surfaces map to successive positions. A span whose
+ * seed can't be located is skipped defensively (never guesses an offset).
+ */
+export function reconstructNerSpans(text: string, rawSpans: readonly RawNerSpan[]): Span[] {
+  const spans: Span[] = [];
+  let cursor = 0;
+
+  for (const rawSpan of rawSpans) {
+    const type = mapNerTag(rawSpan.raw);
+    if (type === null) {
+      continue;
+    }
+    const seed = cleanSurface(rawSpan.surface);
+    if (seed.length === 0) {
+      continue;
+    }
+    let start = text.indexOf(seed, cursor);
+    if (start === -1) {
+      start = text.indexOf(seed);
+    }
+    if (start === -1) {
+      continue;
+    }
+    let end = start + seed.length;
+    // Extend across a `##`-truncated wordpiece continuation (hyphenated names).
+    while (end < text.length && HEBREW_LETTER.test(text[end])) {
+      end += 1;
+    }
+    spans.push({ start, end, type, score: rawSpan.score });
+    cursor = end;
+  }
+
+  return spans;
+}
+
+/**
+ * Install the Phase-0 tokenizer RegExp shim (idempotent). Strips only the ASCII escapes that are
+ * illegal under `/u` (`\"`, `\'`, …) from u/v-flagged patterns; identical semantics, since such a
+ * backslash before a non-special ASCII char just matches the char. Must run before the pipeline
+ * compiles the tokenizer.
+ */
+export function installTokenizerRegexShim(): void {
+  const g = globalThis as typeof globalThis & { __nerRegexShim?: boolean };
+  if (g.__nerRegexShim) {
+    return;
+  }
+  const OrigRegExp = g.RegExp;
+  const VALID_ESCAPE = /[dDwWsSbBnrtfv0xucpPkq\\/.*+?()[\]{}|^$]/;
+  const sanitize = (pattern: string): string =>
+    pattern.replace(/\\([\x20-\x7E])/g, (match, ch: string) => (VALID_ESCAPE.test(ch) ? match : ch));
+
+  // reason: patching the global RegExp constructor is the sanctioned Phase-0 fix; typed loosely
+  // because we mirror the native constructor's overloads.
+  const Patched = function (pattern?: unknown, flags?: unknown) {
+    if (typeof pattern === "string" && typeof flags === "string" && /[uv]/.test(flags)) {
+      try {
+        return new OrigRegExp(pattern, flags);
+      } catch (err) {
+        if (err instanceof SyntaxError) {
+          return new OrigRegExp(sanitize(pattern), flags);
+        }
+        throw err;
+      }
+    }
+    return new OrigRegExp(pattern as string, flags as string | undefined);
+  } as unknown as RegExpConstructor;
+  // instances are real RegExps (we return `new OrigRegExp`), but mirror the prototype so any
+  // `x instanceof RegExp` / static-property access on the constructor still behaves natively.
+  Object.defineProperty(Patched, "prototype", { value: OrigRegExp.prototype });
+
+  g.RegExp = Patched;
+  g.__nerRegexShim = true;
+}
+
+const MODEL_ID = "onnx-community/dictabert-ner-ONNX";
+const DTYPE = "q8"; // int8 — q8 parity proven in Phase 0
+
+export interface HebrewNerOptions {
+  /** WASM by default — it beats WebGPU on integrated GPUs (Phase-0 finding). */
+  readonly device?: "wasm" | "webgpu";
+  readonly progressCallback?: (event: unknown) => void;
+}
+
+/** Async detection facade — same span shape as the deterministic recognizers. */
+export interface HebrewNer {
+  recognize(text: string): Promise<readonly Span[]>;
+}
+
+/**
+ * Load the dictabert-ner pipeline (applies the shim first) and return an async recognizer. The
+ * model is imported dynamically so this module carries no top-level transformers.js cost — pure
+ * helpers above stay unit-testable without the 185 MB model.
+ */
+export async function createHebrewNer(options: HebrewNerOptions = {}): Promise<HebrewNer> {
+  installTokenizerRegexShim();
+  const { pipeline } = await import("@huggingface/transformers");
+  const classifier = await pipeline("token-classification", MODEL_ID, {
+    device: options.device ?? "wasm",
+    dtype: DTYPE,
+    progress_callback: options.progressCallback,
+  });
+
+  return {
+    async recognize(text: string): Promise<readonly Span[]> {
+      const output = (await classifier(text, {
+        aggregation_strategy: "simple",
+      })) as Array<{ entity_group: string; word: string; score: number }>;
+      const rawSpans: RawNerSpan[] = output.map((entity) => ({
+        raw: entity.entity_group,
+        surface: entity.word,
+        score: Number(entity.score),
+      }));
+      return reconstructNerSpans(text, rawSpans);
+    },
+  };
+}

@@ -32,5 +32,10 @@ export { fromCsv, fromKeyFile, toCsv, toKeyFile } from "./key";
 export type { KeyFile } from "./key";
 export { restore } from "./restore";
 export type { RestoreResult } from "./restore";
-// TODO(P1-11): export the NER wrapper from "./ner" (tokenizer /u shim + offset/## fixes —
-//              see browser-poc/PHASE0_FINDINGS.md; mandatory, not optional)
+export {
+  createHebrewNer,
+  installTokenizerRegexShim,
+  mapNerTag,
+  reconstructNerSpans,
+} from "./ner";
+export type { HebrewNer, HebrewNerOptions, RawNerSpan } from "./ner";

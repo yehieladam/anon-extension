@@ -1,0 +1,83 @@
+/**
+ * NER post-processing — tag mapping + offset/## reconstruction, tested against RECORDED dictabert
+ * outputs (browser-poc/browser_result.json). The live model is never loaded here (CI won't pull
+ * 185 MB); createHebrewNer is exercised by the manual recall harness.
+ */
+import { describe, expect, it } from "vitest";
+import { mapNerTag, reconstructNerSpans, type RawNerSpan } from "./ner";
+
+describe("mapNerTag", () => {
+  it("maps model tags server-style", () => {
+    expect(mapNerTag("PER")).toBe("PERSON");
+    expect(mapNerTag("ORG")).toBe("ORGANIZATION");
+    expect(mapNerTag("GPE")).toBe("LOCATION");
+    expect(mapNerTag("LOC")).toBe("LOCATION");
+    expect(mapNerTag("FAC")).toBe("LOCATION");
+  });
+
+  it("drops unknown tags", () => {
+    expect(mapNerTag("MISC")).toBeNull();
+    expect(mapNerTag("")).toBeNull();
+  });
+});
+
+describe("reconstructNerSpans — recorded clean output", () => {
+  const text = "דוד כהן הגיש בקשה למשרד הפנים בירושלים.";
+  const raw: RawNerSpan[] = [
+    { raw: "PER", surface: "דוד כהן", score: 0.9999 },
+    { raw: "ORG", surface: "למשרד הפנים", score: 0.9999 },
+    { raw: "GPE", surface: "בירושלים", score: 0.9993 },
+  ];
+
+  it("aligns each surface to correct offsets and types", () => {
+    const spans = reconstructNerSpans(text, raw);
+    expect(spans.map((s) => text.slice(s.start, s.end))).toEqual([
+      "דוד כהן",
+      "למשרד הפנים",
+      "בירושלים",
+    ]);
+    expect(spans.map((s) => s.type)).toEqual(["PERSON", "ORGANIZATION", "LOCATION"]);
+  });
+});
+
+describe("reconstructNerSpans — the ## hyphenated-name artifact (the real port fix)", () => {
+  it("rebuilds the full name truncated at a ## wordpiece", () => {
+    const text = "עורכת הדין רחל לוי-אברמוביץ ייצגה את חברת אלביט מערכות בתיק האזרחי.";
+    const spans = reconstructNerSpans(text, [{ raw: "PER", surface: "רחל לוי ##-", score: 0.9999 }]);
+    expect(spans).toHaveLength(1);
+    expect(text.slice(spans[0].start, spans[0].end)).toBe("רחל לוי-אברמוביץ");
+    expect(spans[0].type).toBe("PERSON");
+  });
+
+  it("rebuilds an org truncated at ## with a leading preposition", () => {
+    const text = "המחקר נעשה באוניברסיטת בן-גוריון בנגב בשנה שעברה.";
+    const spans = reconstructNerSpans(text, [
+      { raw: "ORG", surface: "באוניברסיטת בן ##-", score: 0.99 },
+    ]);
+    expect(text.slice(spans[0].start, spans[0].end)).toBe("באוניברסיטת בן-גוריון");
+  });
+});
+
+describe("reconstructNerSpans — alignment behaviour", () => {
+  it("skips a span whose surface is not in the text", () => {
+    expect(reconstructNerSpans("טקסט ללא הישות", [{ raw: "PER", surface: "משה כהן", score: 1 }])).toEqual(
+      [],
+    );
+  });
+
+  it("skips unmapped tags before alignment", () => {
+    const text = "משה כהן דיבר";
+    expect(reconstructNerSpans(text, [{ raw: "MISC", surface: "משה כהן", score: 1 }])).toEqual([]);
+  });
+
+  it("maps repeated identical surfaces to successive positions via the cursor", () => {
+    const text = "דוד כהן פגש את דוד כהן";
+    const spans = reconstructNerSpans(text, [
+      { raw: "PER", surface: "דוד כהן", score: 1 },
+      { raw: "PER", surface: "דוד כהן", score: 1 },
+    ]);
+    expect(spans).toHaveLength(2);
+    expect(spans[0].start).toBeLessThan(spans[1].start);
+    expect(text.slice(spans[1].start, spans[1].end)).toBe("דוד כהן");
+  });
+});
