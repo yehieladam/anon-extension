@@ -32,12 +32,12 @@ unit test with the same valid/invalid cases the server checks use.
 - [x] **P1-03** `recognizers/israeliPhone.ts` — IL_PHONE (mobile + landline formats)
   Owner: yehieladam
   DoD: numbering-plan regex (05x/07x mobile, 02/03/04/08/09 landline, +972 trunk) + validator; 37 unit tests (052-/03- samples, +972, separators, negatives, 9-digit-ID guard, no-bite-into-long-run). Server `israeli_phone.py` not vendored here — faithful re-impl, reconcile if server samples diverge.
-- [ ] **P1-04** `recognizers/israeliCompany.ts` — IL_COMPANY (ח"פ, checksum like ID)
-  Owner: unassigned
-  DoD: port of `israeli_company.py`; valid/invalid checksum tests.
-- [ ] **P1-05** `recognizers/israeliIban.ts` — IL_IBAN (IL + mod-97)
-  Owner: unassigned
-  DoD: port of `israeli_iban.py` incl. real IBAN mod-97 validation; tests with valid/invalid IBANs.
+- [x] **P1-04** `recognizers/israeliCompany.ts` — IL_COMPANY (ח״פ, checksum like ID)
+  Owner: yehieladam
+  DoD: 9 digits + leading 5 + Luhn check; 24 tests (valid/invalid checksum, non-5 ID rejected, length, offsets). Overlap with ISRAELI_ID (both 9-digit Luhn) resolved by P1-12. Server file not vendored — faithful re-impl.
+- [x] **P1-05** `recognizers/israeliIban.ts` — IL_IBAN (IL + mod-97)
+  Owner: yehieladam
+  DoD: real ISO-13616 mod-97 over IL + 21 digits; 9 tests (canonical valid compact/spaced/lowercase, broken checksum, wrong length/prefix, offsets). Server file not vendored — faithful re-impl.
 - [ ] **P1-06** `recognizers/israeliCase.ts` — IL_CASE (מספר תיק)
   Owner: unassigned
   DoD: port of `israeli_case.py`; pattern + context tests.
