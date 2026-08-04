@@ -31,6 +31,11 @@ import { collectOutlineItems, sanitizeMetadata, type OutlineItem } from "./pdfSa
  */
 const SAFE_SAVE_OPTIONS = { garbage: "deduplicate", compress: true, sanitize: true } as const;
 
+/** Thrown (as an Error message, so it survives Comlink) when a PDF has no usable text layer. */
+export const NO_TEXT_LAYER = "NO_TEXT_LAYER";
+/** Below this many non-whitespace characters across the whole document, we treat it as image-only. */
+const NO_TEXT_LAYER_MIN_CHARS = 3;
+
 /** Build the mapped text from an already-open mupdf document (shared by extract + redact). */
 function mappedFromDoc(doc: any): MappedText {
   const pages: PageLines[] = [];
@@ -144,6 +149,13 @@ export async function redactPdf(buffer: ArrayBuffer, anonymize: Anonymize): Prom
   const mupdf: any = await import("mupdf");
   const doc = mupdf.PDFDocument.openDocument(new Uint8Array(buffer), "application/pdf");
   const mapped = mappedFromDoc(doc);
+
+  // Refuse a PDF with no usable text layer. A scanned/photographed document is an IMAGE — our text
+  // detection is blind to it, so redacting it would produce a falsely-clean file (a silent leak). We
+  // refuse rather than under-redact; reading scans is the OCR track (PDF-05), not yet available.
+  if (mapped.text.replace(/\s/g, "").length < NO_TEXT_LAYER_MIN_CHARS) {
+    throw new Error(NO_TEXT_LAYER);
+  }
 
   // UNIFIED detection pass: the body's logical text PLUS every outline (bookmark) title go through ONE
   // anonymize call, so the same name is the SAME placeholder in the body and in a bookmark (and the
