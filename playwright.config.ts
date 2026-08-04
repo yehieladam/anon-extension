@@ -13,7 +13,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: 0,
   reporter: "list",
-  timeout: 240_000, // the model/wasm downloads can be slow on a cold cache
+  timeout: 300_000, // the model/wasm downloads (~185 MB, cold cache each run) can be slow
   use: {
     baseURL: "http://localhost:4173",
     trace: "on-first-retry",
