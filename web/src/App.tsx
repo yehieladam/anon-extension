@@ -1,6 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { AnonymizeResult } from "@engine/types";
+import type { EntityType } from "@engine/types";
 import type { RestoreResult } from "@engine/restore";
 import { getEngine } from "./worker/engineClient";
 
@@ -8,12 +9,40 @@ import { getEngine } from "./worker/engineClient";
 const SOURCE_URL = "https://github.com/yehieladam/anon-extension";
 const COPIED_RESET_MS = 1500;
 
-/**
- * Mechikon (P2W-02 + P2W-05) — paste OR upload a file → anonymize → restore, in an Apple-minimal
- * monochrome layout. All engine work (incl. docx/xlsx/pdf text extraction) runs in a Web Worker
- * (P0I-01); nothing leaves the browser. Deterministic detection for now; Hebrew-name NER lands
- * behind an explicit model-load step. Every string is via i18n.
- */
+/** EntityType → i18n label key, for the per-type count chips. */
+const TYPE_LABEL: Record<EntityType, string> = {
+  ISRAELI_ID: "entity.id",
+  IL_COMPANY: "entity.company",
+  IL_PHONE: "entity.phone",
+  IL_IBAN: "entity.iban",
+  IL_CASE: "entity.case",
+  IL_LAND: "entity.land",
+  IL_POLICY: "entity.policy",
+  IL_INSURED: "entity.insured",
+  EMAIL_ADDRESS: "entity.email",
+  PERSON: "entity.name",
+  ORGANIZATION: "entity.org",
+  LOCATION: "entity.place",
+};
+
+/** Split on placeholder tokens and render each as a subtle pill so the redactions read clearly. */
+const TOKEN_SPLIT = /(\[[^[\]]*_\d+\])/g;
+const IS_TOKEN = /^\[[^[\]]*_\d+\]$/;
+function highlight(text: string): ReactNode[] {
+  return text.split(TOKEN_SPLIT).map((part, index) =>
+    IS_TOKEN.test(part) ? (
+      <mark
+        key={index}
+        className="mx-0.5 rounded-md bg-ink/[0.06] px-1.5 py-0.5 text-[0.92em] font-medium text-ink"
+      >
+        {part}
+      </mark>
+    ) : (
+      <span key={index}>{part}</span>
+    ),
+  );
+}
+
 export function App() {
   const { t } = useTranslation();
 
@@ -80,6 +109,17 @@ export function App() {
     setRestoreResult(restored);
   }, [restoreInput, result]);
 
+  const chips = useMemo(() => {
+    if (!result) {
+      return [];
+    }
+    const counts = new Map<EntityType, number>();
+    for (const row of result.key) {
+      counts.set(row.type, (counts.get(row.type) ?? 0) + 1);
+    }
+    return [...counts.entries()];
+  }, [result]);
+
   const statusLine =
     status === "reading"
       ? t("input.reading")
@@ -99,7 +139,18 @@ export function App() {
   return (
     <div dir="rtl" className="min-h-screen bg-white text-ink">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
-        <span className="text-[17px] font-semibold tracking-tight">{t("app.name")}</span>
+        <span className="flex items-center gap-2">
+          <img
+            src="/logo.png"
+            alt=""
+            className="h-7 w-7 object-contain"
+            aria-hidden="true"
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+            }}
+          />
+          <span className="text-[17px] font-semibold tracking-tight">{t("app.name")}</span>
+        </span>
         <span className="inline-flex items-center gap-1.5 text-xs text-zinc-400">
           <span className="h-1.5 w-1.5 rounded-full bg-zinc-900" aria-hidden="true" />
           {t("trust.badge.zero")}
@@ -108,7 +159,7 @@ export function App() {
 
       <main className="mx-auto max-w-2xl px-6">
         <section className="pt-16 text-center sm:pt-24">
-          <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl">
+          <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight sm:text-[3.25rem]">
             {t("hero.title")}
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-zinc-500">
@@ -117,7 +168,7 @@ export function App() {
         </section>
 
         <section className="mt-12">
-          <div className="rounded-3xl border border-hairline bg-white p-2 shadow-card">
+          <div className="rounded-3xl border border-hairline bg-white p-2 shadow-card transition focus-within:shadow-[0_1px_2px_rgba(0,0,0,0.05),0_16px_40px_-16px_rgba(0,0,0,0.18)]">
             <textarea
               dir="rtl"
               lang="he"
@@ -128,7 +179,7 @@ export function App() {
               placeholder={t("input.paste.placeholder")}
             />
             <div className="flex items-center justify-between gap-3 px-2 pb-1">
-              <label className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-full border border-hairline px-4 text-[14px] font-medium text-zinc-600 transition hover:bg-surface">
+              <label className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-full border border-hairline px-4 text-[14px] font-medium text-zinc-600 transition hover:border-zinc-300 hover:bg-surface">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path
                     d="M12 16V4m0 0L7 9m5-5 5 5M5 20h14"
@@ -154,7 +205,7 @@ export function App() {
                 type="button"
                 onClick={onAnonymize}
                 disabled={busy || input.trim().length === 0}
-                className="min-h-[44px] rounded-full bg-ink px-6 text-[15px] font-medium text-white transition hover:opacity-90 disabled:opacity-30"
+                className="min-h-[44px] rounded-full bg-ink px-6 text-[15px] font-medium text-white transition hover:opacity-90 active:scale-[0.98] disabled:opacity-30"
               >
                 {t("input.submit")}
               </button>
@@ -166,19 +217,41 @@ export function App() {
         </section>
 
         {result && (
-          <section className="mt-8">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-medium text-zinc-500">
-                {result.key.length > 0
-                  ? t("result.found", { count: result.key.length })
-                  : t("result.none")}
-              </span>
+          <section className="mt-8 animate-[fadeIn_0.25s_ease]">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-ink">
+                  {result.key.length > 0
+                    ? t("result.found", { count: result.key.length })
+                    : t("result.none")}
+                </span>
+                {chips.map(([type, count]) => (
+                  <span
+                    key={type}
+                    className="inline-flex items-center gap-1 rounded-full bg-surface px-2.5 py-1 text-xs text-zinc-600"
+                  >
+                    {t(TYPE_LABEL[type])}
+                    <span className="tabular-nums text-zinc-400">{count}</span>
+                  </span>
+                ))}
+              </div>
               {result.key.length > 0 && (
                 <button
                   type="button"
                   onClick={onCopy}
-                  className="min-h-[36px] rounded-full border border-hairline px-4 text-[13px] font-medium text-ink transition hover:bg-surface"
+                  className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-hairline px-4 text-[13px] font-medium text-ink transition hover:bg-surface"
                 >
+                  {copied ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path
+                        d="M5 12l4.5 4.5L19 7"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  ) : null}
                   {copied ? t("result.copied") : t("result.copy")}
                 </button>
               )}
@@ -187,9 +260,9 @@ export function App() {
               <>
                 <div
                   dir="rtl"
-                  className="whitespace-pre-wrap break-words rounded-2xl border border-hairline bg-surface p-5 text-[17px] leading-relaxed"
+                  className="whitespace-pre-wrap break-words rounded-2xl border border-hairline bg-surface p-5 text-[17px] leading-loose"
                 >
-                  {result.anonymizedText}
+                  {highlight(result.anonymizedText)}
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-zinc-400">{t("result.note")}</p>
               </>
@@ -198,7 +271,7 @@ export function App() {
         )}
 
         <section className="mt-8">
-          <details className="group rounded-2xl border border-hairline bg-white">
+          <details className="group rounded-2xl border border-hairline bg-white transition hover:border-zinc-300">
             <summary className="flex cursor-pointer list-none items-center justify-between p-5 text-sm font-medium text-ink">
               {t("restore.title")}
               <span className="text-zinc-300 transition group-open:rotate-180" aria-hidden="true">
@@ -227,9 +300,9 @@ export function App() {
                 <>
                   <div
                     dir="rtl"
-                    className="mt-4 whitespace-pre-wrap break-words rounded-2xl border border-hairline bg-surface p-5 text-[17px] leading-relaxed"
+                    className="mt-4 whitespace-pre-wrap break-words rounded-2xl border border-hairline bg-surface p-5 text-[17px] leading-loose"
                   >
-                    {restoreResult.restoredText}
+                    {highlight(restoreResult.restoredText)}
                   </div>
                   {restoreResult.unmatched.length > 0 && (
                     <p className="mt-2 text-xs text-amber-600">
