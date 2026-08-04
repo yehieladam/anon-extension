@@ -118,6 +118,11 @@ export function App() {
   const [pendingEnc, setPendingEnc] = useState<EncryptedKeyFile | null>(null);
   const [unlockPassphrase, setUnlockPassphrase] = useState("");
   const [keyError, setKeyError] = useState<"wrong" | "invalid" | null>(null);
+  // Restore a FILE (docx/txt with placeholders) back to its original values.
+  const [restoreFileError, setRestoreFileError] = useState<"unsupported" | "nokey" | "generic" | null>(
+    null,
+  );
+  const [restoreUnmatched, setRestoreUnmatched] = useState(0);
 
   const busy = status !== null;
 
@@ -325,12 +330,45 @@ export function App() {
     window.setTimeout(() => setCopied(false), COPIED_RESET_MS);
   }, [result]);
 
+  // Prefer an uploaded key (restore in a later/fresh session) over the in-memory session key.
+  const activeKey = uploadedKey ?? result?.key ?? null;
+
   const onRestore = useCallback(async () => {
-    // Prefer an uploaded key (restore in a later/fresh session) over the in-memory session key.
-    const key = uploadedKey ?? result?.key ?? [];
-    const restored = await getEngine().restore(restoreInput, key);
+    const restored = await getEngine().restore(restoreInput, activeKey ?? []);
     setRestoreResult(restored);
-  }, [restoreInput, result, uploadedKey]);
+  }, [restoreInput, activeKey]);
+
+  const onRestoreFile = useCallback(
+    async (file: File | undefined) => {
+      if (!file) {
+        return;
+      }
+      setRestoreFileError(null);
+      setRestoreUnmatched(0);
+      if (!activeKey || activeKey.length === 0) {
+        setRestoreFileError("nokey");
+        return;
+      }
+      try {
+        const buffer = await file.arrayBuffer();
+        const { bytes, unmatched } = await getEngine().restoreFile(file.name, buffer, activeKey);
+        const dot = file.name.lastIndexOf(".");
+        const name =
+          dot === -1
+            ? `${file.name}_משוחזר`
+            : `${file.name.slice(0, dot)}_משוחזר${file.name.slice(dot)}`;
+        downloadBlob(new Blob([bytes as BlobPart], { type: mimeFor(file.name) }), name);
+        setRestoreUnmatched(unmatched.length);
+      } catch (error) {
+        setRestoreFileError(
+          error instanceof Error && error.message.includes("RESTORE_UNSUPPORTED")
+            ? "unsupported"
+            : "generic",
+        );
+      }
+    },
+    [activeKey],
+  );
 
   const chips = useMemo(() => {
     if (!result) {
@@ -711,6 +749,38 @@ export function App() {
                   {keyError === "wrong" ? t("key.wrongPassphrase") : t("key.invalid")}
                 </p>
               )}
+
+              <div className="mt-4 rounded-2xl border border-hairline bg-surface p-4">
+                <div className="text-[13px] font-medium text-ink">{t("restoreFile.title")}</div>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("restoreFile.explain")}</p>
+                <label className="mt-3 inline-flex min-h-[40px] cursor-pointer items-center gap-2 rounded-full border border-hairline bg-white px-5 text-[14px] font-medium text-ink transition hover:bg-surface">
+                  {t("restoreFile.upload")}
+                  <input
+                    type="file"
+                    accept=".docx,.txt"
+                    className="hidden"
+                    onChange={(event) => {
+                      void onRestoreFile(event.target.files?.[0]);
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+                {restoreFileError && (
+                  <p className="mt-2 text-xs text-amber-600">
+                    {restoreFileError === "nokey"
+                      ? t("restoreFile.noKey")
+                      : restoreFileError === "unsupported"
+                        ? t("restoreFile.unsupported")
+                        : t("restoreFile.generic")}
+                  </p>
+                )}
+                {restoreUnmatched > 0 && (
+                  <p className="mt-2 text-xs text-amber-600">
+                    {t("restore.unmatched", { count: restoreUnmatched })}
+                  </p>
+                )}
+              </div>
+
               {restoreResult && (
                 <>
                   <div

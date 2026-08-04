@@ -23,6 +23,7 @@ import type { AnonymizeResult, KeyRow, Span } from "@engine/types";
 import type { RestoreResult } from "@engine/restore";
 import type { HebrewNer } from "@engine/ner";
 import { redactFile, type FileRedaction } from "./officeRedact";
+import { restoreFile, type RestoredFile } from "./restoreFile";
 import { installWorkerNetworkMonitor, onWorkerNetwork } from "./workerNetworkMonitor";
 
 // Patch the worker's fetch at module-eval, well before any loadNer() call reaches the network.
@@ -109,6 +110,11 @@ const api = {
   /** Put original values back using the key (tolerant matcher). */
   restore(text: string, key: readonly KeyRow[]): RestoreResult {
     return restore(text, key);
+  },
+
+  /** Restore an uploaded file (docx/txt) with the key → reconstructed file bytes to download. */
+  restoreFile(fileName: string, buffer: ArrayBuffer, key: readonly KeyRow[]): Promise<RestoredFile> {
+    return restoreFile(fileName, buffer, key);
   },
 };
 
