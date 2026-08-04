@@ -145,17 +145,8 @@ export function App() {
   return (
     <div dir="rtl" className="min-h-screen bg-white text-ink">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
-        <span className="flex items-center gap-2.5">
-          <img
-            src="/logo.png"
-            alt=""
-            className="h-11 w-11 object-contain"
-            aria-hidden="true"
-            onError={(event) => {
-              event.currentTarget.style.display = "none";
-            }}
-          />
-          <span className="text-[19px] font-semibold tracking-tight">{t("app.name")}</span>
+        <span className="text-[19px] font-semibold tracking-tight" dir="ltr">
+          Mechikon
         </span>
         <span className="inline-flex items-center gap-1.5 text-xs text-zinc-400">
           <span className="h-1.5 w-1.5 rounded-full bg-zinc-900" aria-hidden="true" />
@@ -164,8 +155,16 @@ export function App() {
       </header>
 
       <main className="mx-auto max-w-2xl px-6">
-        <section className="pt-16 text-center sm:pt-24">
-          <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight sm:text-[3.25rem]">
+        <section className="pt-12 text-center sm:pt-16">
+          <img
+            src="/logo.png"
+            alt="Mechikon"
+            className="mx-auto h-24 w-24 object-contain sm:h-28 sm:w-28"
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+            }}
+          />
+          <h1 className="mt-6 text-4xl font-semibold leading-[1.1] tracking-tight sm:text-[3.25rem]">
             {t("hero.title")}
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-zinc-500">
