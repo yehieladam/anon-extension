@@ -1,5 +1,8 @@
 import { useTranslation } from "react-i18next";
 
+/** AGPL-3.0 §13: users interacting over a network must be offered the corresponding source. */
+const SOURCE_URL = "https://github.com/yehieladam/anon-extension";
+
 /**
  * Mechikon shell (P2W-01) — professional/legal identity, RTL, all strings via i18n. This is the
  * layout + trust framing only; the paste→detect→anonymize→restore flow and the live network badge
@@ -86,6 +89,16 @@ export function App() {
         <p className="mx-auto mt-2 max-w-2xl">{t("legal.noCollection")}</p>
         <p className="mx-auto mt-2 max-w-2xl">{t("legal.notAdvice")}</p>
         <p className="mt-2">{t("legal.brand")}</p>
+        <p className="mt-2">
+          <a
+            href={SOURCE_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-navy underline underline-offset-2"
+          >
+            {t("legal.sourceLink")}
+          </a>
+        </p>
       </footer>
     </div>
   );

@@ -142,10 +142,10 @@ a blocker. The Mechikon build stays in THIS repo (open-source/AGPL), never merge
   Owner: unassigned
   Scope: the killer use case both competitors monetize (see `docs/differentiation.md`) — strip PII → send sanitized text to ChatGPT/Claude → paste the answer back → real values restored. All in-browser; the token→value map lives only in the tab.
   DoD: full round-trip works on a real doc + its key; restored answer matches originals; missing-key handled explicitly.
-- [ ] **P2W-04** "Zero network" proof surface (turn the privacy claim into something verifiable)
-  Owner: unassigned
-  Scope: small badge/panel stating "0 network requests (except the one-time model download)"; extend the WASM badge from the spike. Makes the marketing claim (`docs/marketing.md`) concrete.
-  DoD: badge reflects real state; no false claim; visible in the UI.
+- [ ] **P2W-04** "Zero network" proof surface (turn the privacy claim into something verifiable) — **BLOCKING GATE before any deploy**
+  Owner: yehieladam
+  Scope: small badge/panel stating "0 network requests (except the one-time model download)". **⚠️ Code review 2026-08-04:** the shell currently renders a STATIC "0 בקשות רשת" badge (`web/src/App.tsx`, commented as a placeholder). `docs/trust.md`: "a trust surface that lies once is dead forever." The badge MUST reflect real observed network state before the site is ever deployed — a static badge that could show "0" while a request happened is disqualifying for this audience.
+  DoD: badge reflects real observed state; no false claim; visible in the UI. **Nothing ships to a public URL until this is real.**
 - [ ] **P2W-05** Design system: **professional/legal** identity (navy/slate, trust-forward) on the web app
   Owner: unassigned
   Scope: decision 2026-08-03 — audience is risk-averse lawyers; **supersedes the earlier organic mockup** (cream/terracotta/sage, Suez One/Rubik). Semantic tokens, not raw colors. Hebrew-only UI, RTL.
@@ -232,9 +232,9 @@ especially a risk-averse Israeli lawyer — can verify. This is the moat vs comp
 "trust our server."
 
 - [ ] **TR-01** Strict CSP: `connect-src` locked to only the model host; publicly documented
-  Owner: unassigned
-  Scope: browser-enforced boundary (not a code promise). After model cache, effectively no network. Document the header so it is a citable trust argument. Coordinates with P2W-01 (web) and the MV3 CSP (plan §3).
-  DoD: CSP present and verified in both surfaces; a doc note explains what it blocks and why.
+  Owner: yehieladam
+  Scope: browser-enforced boundary (not a code promise). **Web app CSP ADDED (code review 2026-08-04):** `web/vite.config.ts` (dev/preview) + `web/vercel.json` — `default-src 'self'`, `connect-src 'self'` + the HF model hosts, `object-src/base-uri/form-action` locked, `script-src 'self' 'wasm-unsafe-eval'`, `worker-src 'self' blob:`. **Tighten `connect-src` to `'self'` once the model self-hosts on R2 (P4-02).** Extension side already has its MV3 CSP.
+  DoD: CSP present and verified in both surfaces (web ✅, extension has MV3 CSP); a doc note explains what it blocks and why. Runtime-verify no request is blocked once the model flow lands.
 - [ ] **TR-02** Extension published with zero network/host permissions; surface it in the UI
   Owner: unassigned
   Scope: manifest requests no host permissions / no network; Chrome then attests the extension cannot reach the network. Show this to the user as a trust signal.

