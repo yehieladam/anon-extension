@@ -127,8 +127,12 @@ const MODEL_ID = "onnx-community/dictabert-ner-ONNX";
 const DTYPE = "q8"; // int8 — q8 parity proven in Phase 0
 
 export interface HebrewNerOptions {
-  /** WASM by default — it beats WebGPU on integrated GPUs (Phase-0 finding). */
-  readonly device?: "wasm" | "webgpu";
+  /**
+   * WASM by default — it beats WebGPU on integrated GPUs (Phase-0 finding). `cpu` is the
+   * onnxruntime-node execution provider, used only by the node recall harness (the browser has no
+   * `cpu` device); q8 output is identical to wasm, so recall measured on cpu is representative.
+   */
+  readonly device?: "wasm" | "webgpu" | "cpu";
   readonly progressCallback?: (event: unknown) => void;
   /**
    * WASM threads. Multi-threaded ORT needs a crossOriginIsolated context (COOP/COEP); the caller
