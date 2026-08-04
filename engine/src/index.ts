@@ -27,6 +27,12 @@ export { israeliPolicyRecognizer } from "./recognizers/israeliPolicy";
 export { israeliInsuredRecognizer } from "./recognizers/israeliInsured";
 export { emailRecognizer } from "./recognizers/email";
 export { resolveOverlaps } from "./resolve";
+export {
+  DETERMINISTIC_RECOGNIZERS,
+  anonymizeDeterministic,
+  anonymizeFull,
+  detectDeterministic,
+} from "./pipeline";
 export { anonymize, placeholderFor } from "./anonymize";
 export { fromCsv, fromKeyFile, toCsv, toKeyFile } from "./key";
 export type { KeyFile } from "./key";
