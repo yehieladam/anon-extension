@@ -38,12 +38,12 @@ unit test with the same valid/invalid cases the server checks use.
 - [x] **P1-05** `recognizers/israeliIban.ts` — IL_IBAN (IL + mod-97)
   Owner: yehieladam
   DoD: real ISO-13616 mod-97 over IL + 21 digits; 9 tests (canonical valid compact/spaced/lowercase, broken checksum, wrong length/prefix, offsets). Server file not vendored — faithful re-impl.
-- [ ] **P1-06** `recognizers/israeliCase.ts` — IL_CASE (מספר תיק)
-  Owner: unassigned
-  DoD: port of `israeli_case.py`; pattern + context tests.
-- [ ] **P1-07** `recognizers/israeliLand.ts` — IL_LAND (גוש/חלקה)
-  Owner: unassigned
-  DoD: port of `israeli_land.py`; pattern + context tests.
+- [x] **P1-06** `recognizers/israeliCase.ts` — IL_CASE (מספר תיק)
+  Owner: yehieladam
+  DoD: conservative (precision-first) — net-hamishpat dash format (5–7 digit first group, excludes ISO dates) + numbers introduced by תיק; score 0.9 (no checksum). 9 tests. **RECONCILE:** case-type-prefixed forms (ת״א/בג״ץ …) intentionally deferred to the server file to avoid over-matching Hebrew abbreviations.
+- [x] **P1-07** `recognizers/israeliLand.ts` — IL_LAND (גוש/חלקה)
+  Owner: yehieladam
+  DoD: keyword-anchored (both גוש and חלקה + numbers), optional /sub-plot; single span; 6 tests incl. keyword-only and lone-חלקה negatives. Server file not vendored — faithful re-impl.
 - [ ] **P1-08** `recognizers/israeliPolicy.ts` — IL_POLICY (מספר פוליסה)
   Owner: unassigned
   DoD: port of `israeli_policy.py`; pattern + context tests.
