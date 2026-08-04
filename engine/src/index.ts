@@ -23,8 +23,8 @@ export { isValidIsraeliCompany, israeliCompanyRecognizer } from "./recognizers/i
 export { isValidIsraeliIban, israeliIbanRecognizer } from "./recognizers/israeliIban";
 export { israeliCaseRecognizer } from "./recognizers/israeliCase";
 export { israeliLandRecognizer } from "./recognizers/israeliLand";
-// TODO(P1-08): export israeliPolicyRecognizer from "./recognizers/israeliPolicy"
-// TODO(P1-09): export israeliInsuredRecognizer from "./recognizers/israeliInsured"
+export { israeliPolicyRecognizer } from "./recognizers/israeliPolicy";
+export { israeliInsuredRecognizer } from "./recognizers/israeliInsured";
 // TODO(P1-10): export emailRecognizer from "./recognizers/email"
 // TODO(P1-11): export the NER wrapper from "./ner" (tokenizer /u shim + offset/## fixes —
 //              see browser-poc/PHASE0_FINDINGS.md; mandatory, not optional)
