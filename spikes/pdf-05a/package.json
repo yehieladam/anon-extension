@@ -1,0 +1,19 @@
+{
+  "name": "pdf-05a",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "PDF-05a throwaway spike: can we truly redact a SCANNED (image-only) PDF fully client-side, and how good is Hebrew OCR on scans.",
+  "scripts": {
+    "build:scan": "node src/build-scan-fixture.mjs",
+    "spike:native": "node src/native-redact.mjs",
+    "spike:fallback": "node src/fallback-redact.mjs",
+    "spike:ocr": "node src/ocr-bench.mjs",
+    "spike": "npm run build:scan && npm run spike:native && npm run spike:fallback && npm run spike:ocr"
+  },
+  "license": "AGPL-3.0",
+  "dependencies": {
+    "mupdf": "^1.28.0",
+    "tesseract.js": "^5.1.1"
+  }
+}

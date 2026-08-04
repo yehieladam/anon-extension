@@ -1,0 +1,6 @@
+node_modules/
+out/
+fixtures/*.pdf
+fixtures/*.png
+tessdata/*.traineddata
+tessdata/*.gz
