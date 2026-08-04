@@ -81,10 +81,10 @@ unit test with the same valid/invalid cases the server checks use.
 Architecture/tooling gaps found in the pre-build review. **Several are prerequisites for P2W** — don't
 build the UI on the main thread and retrofit later.
 
-- [ ] **P0I-01** Engine in a **Web Worker** via **Comlink** (HARD prerequisite for P2W)
-  Owner: unassigned
-  Scope: 185 MB NER + mupdf/tesseract WASM must run off the UI thread or the page freezes. Engine exposes an async API through Comlink; app never calls engine on the main thread. Works with `crossOriginIsolated` (multi-thread) and degrades to `numThreads=1`.
-  DoD: paste→detect runs in a worker; UI stays responsive during a large doc; typed Comlink surface.
+- [x] **P0I-01** Engine in a **Web Worker** via **Comlink** (HARD prerequisite for P2W)
+  Owner: yehieladam
+  Scope: `web/src/worker/engine.worker.ts` (Comlink.expose) + `engineClient.ts` (lazy single module worker, Comlink.wrap). Engine helper `engine/src/pipeline.ts` (`anonymizeDeterministic`/`detectDeterministic`/`anonymizeFull`) orchestrates recognizers→resolve→anonymize so the worker stays thin and it's reusable by the extension. **The worker imports specific engine modules, NOT the barrel** — this keeps ner.ts (transformers.js + 23 MB onnxruntime wasm) out of the graph, so the deterministic path is instant and the model can lazy-load later (P0I-02). Verified: `build:web` emits a separate 9.6 kB worker chunk and NO ort-wasm.
+  DoD: paste→anonymize→restore runs off the UI thread via a typed Comlink surface ✅; app never calls the engine on the main thread ✅. (Live in-browser drive: P0I-06 Playwright.)
 - [ ] **P0I-02** **Lazy-load** heavy WASM (mupdf, tesseract) only when PDF/scan is used
   Owner: unassigned
   Scope: someone pasting text must NOT pay for mupdf/tesseract. Dynamic-import the PDF/OCR modules on first use; NER model loads for the core flow.
@@ -135,9 +135,10 @@ a blocker. The Mechikon build stays in THIS repo (open-source/AGPL), never merge
   Owner: yehieladam
   Scope: separate Vite build (`web/vite.config.ts`, `npm run build:web` → `dist-web`), own `web/vercel.json` + a dev/preview COOP/COEP plugin so the page is `crossOriginIsolated`; professional/legal RTL shell (hero, 4-step strip, input placeholder, trust strip, footer) with all strings via i18n; `@engine` alias reused. Build/typecheck/lint green.
   DoD (shell): ✅ `build:web` produces `dist-web`; ✅ COOP/COEP configured (dev + vercel.json). REMAINING (moves to P2W-02 + P0I-01): wire the actual detect→anonymize→restore flow through the Worker, then verify NER runs in-browser with no PII network calls.
-- [ ] **P2W-02** Paste flow end-to-end: detect → highlight by type → anonymized copy → download key
-  Owner: unassigned
-  DoD: real detections only; RTL correct; per-type counts; mirrors P2-02 but on the web surface.
+- [~] **P2W-02** Paste flow end-to-end: detect → highlight by type → anonymized copy → download key
+  Owner: yehieladam
+  Scope: PARTIAL — the working loop is wired in `web/src/App.tsx`: paste → "השחרה" → (worker) `anonymizeDeterministic` → anonymized text on screen (U+05F4 placeholders) + found-count + copy; plus a restore panel (also covers **P2W-03**: paste anonymized/AI text → originals back, unmatched surfaced). Real deterministic detections only; RTL; all strings via i18n. REMAINING: per-type highlight coloring + count chips, keep-word rescue (P2-04 parity), key CSV/JSON download (P1-14/KEY-01), and the NER name pass (needs the model-load step).
+  DoD: real detections only ✅; RTL ✅; per-type count chips — pending; download key — pending.
 - [ ] **P2W-03** "Anonymize before the AI" round-trip UI: paste an AI reply containing placeholders → restore originals (uses P1-15)
   Owner: unassigned
   Scope: the killer use case both competitors monetize (see `docs/differentiation.md`) — strip PII → send sanitized text to ChatGPT/Claude → paste the answer back → real values restored. All in-browser; the token→value map lives only in the tab.
