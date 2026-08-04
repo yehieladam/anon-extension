@@ -5,6 +5,7 @@
  */
 import type { AnonymizeResult, Recognizer, Span } from "./types";
 import { resolveOverlaps } from "./resolve";
+import { completeOccurrences } from "./occurrences";
 import { anonymize } from "./anonymize";
 import { israeliIdRecognizer } from "./recognizers/israeliId";
 import { israeliPhoneRecognizer } from "./recognizers/israeliPhone";
@@ -53,6 +54,9 @@ export function anonymizeFull(text: string, nerSpans: readonly Span[]): Anonymiz
  * together and anonymized. Manual spans (PRIORITY 4) win overlaps; deterministic outranks NER.
  */
 export function anonymizeWith(text: string, extraSpans: readonly Span[]): AnonymizeResult {
-  const resolved = resolveOverlaps([...detectDeterministic(text), ...extraSpans]);
+  const base = resolveOverlaps([...detectDeterministic(text), ...extraSpans]);
+  // Redact every whole-word occurrence of each confirmed value, not only the tagged ones — otherwise a
+  // name NER caught in one place but missed in another (or tagged only half of) leaks the rest.
+  const resolved = resolveOverlaps([...base, ...completeOccurrences(text, base)]);
   return anonymize(text, resolved);
 }

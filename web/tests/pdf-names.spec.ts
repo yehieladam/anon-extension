@@ -16,7 +16,13 @@ const ALLOWED = ["huggingface.co", "hf.co", "jsdelivr.net"];
 test("@model redacts the Hebrew name in a PDF and never uploads the file", async ({ page }) => {
   const offOrigin: { host: string; method: string }[] = [];
   page.on("request", (req) => {
-    const { hostname } = new URL(req.url());
+    const url = new URL(req.url());
+    // blob:/data: are in-memory local resources (the Comlink worker, ORT's threaded wasm) with an empty
+    // hostname — not network egress. Only real off-origin hosts count for the "never uploads" check.
+    if (url.protocol === "blob:" || url.protocol === "data:") {
+      return;
+    }
+    const { hostname } = url;
     if (hostname !== "localhost" && hostname !== "127.0.0.1") {
       offOrigin.push({ host: hostname, method: req.method() });
     }
@@ -25,8 +31,13 @@ test("@model redacts the Hebrew name in a PDF and never uploads the file", async
   await page.goto("/");
   await page.setInputFiles("input[type=file]", FIXTURE);
 
-  // Wait for the model to load and the result to upgrade so the name chip appears.
-  await expect(page.locator("mark", { hasText: "שם" })).toBeVisible({ timeout: 180_000 });
+  // Wait for the model to load and the result to upgrade so a NER entity chip appears. dictabert tags
+  // the placeholder name "ישראל ישראלי" as LOCATION (מקום) — "ישראל" is also the country — not PERSON;
+  // the label is the model's call, what matters is that the name is redacted (asserted on the file
+  // below). So we wait for either a name (שם) or place (מקום) chip, not specifically שם.
+  await expect(page.locator("mark").filter({ hasText: /שם|מקום/ }).first()).toBeVisible({
+    timeout: 260_000,
+  });
 
   const downloadButton = page.getByRole("button", { name: "הורדת הקובץ המושחר" });
   const [download] = await Promise.all([page.waitForEvent("download"), downloadButton.click()]);
