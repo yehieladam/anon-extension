@@ -147,10 +147,10 @@ a blocker. The Mechikon build stays in THIS repo (open-source/AGPL), never merge
   Owner: yehieladam
   Scope: small badge/panel stating "0 network requests (except the one-time model download)". **⚠️ Code review 2026-08-04:** the shell currently renders a STATIC "0 בקשות רשת" badge (`web/src/App.tsx`, commented as a placeholder). `docs/trust.md`: "a trust surface that lies once is dead forever." The badge MUST reflect real observed network state before the site is ever deployed — a static badge that could show "0" while a request happened is disqualifying for this audience.
   DoD: badge reflects real observed state; no false claim; visible in the UI. **Nothing ships to a public URL until this is real.**
-- [ ] **P2W-05** Design system: **professional/legal** identity (navy/slate, trust-forward) on the web app
-  Owner: unassigned
-  Scope: decision 2026-08-03 — audience is risk-averse lawyers; **supersedes the earlier organic mockup** (cream/terracotta/sage, Suez One/Rubik). Semantic tokens, not raw colors. Hebrew-only UI, RTL.
-  DoD: professional/legal tokens defined; RTL correct; trust surface (TR) prominent, not in the footer.
+- [~] **P2W-05** Design system: **Apple-minimal, monochrome** (decision 2026-08-04, supersedes navy/legal)
+  Owner: yehieladam
+  Scope: user chose modern-clean SaaS, Apple-minimalist, black/grey mono accent, simplicity-first, "very polished". Implemented a full App redesign (`web/src/App.tsx`): airy centred layout, near-black ink on white, hairline borders, one clear black CTA, big input card, collapsible restore, minimal "how it works" + trust rows. Tokens `ink/surface/hairline` + `shadow-card` in tailwind; Apple system font stack (no web-font download → keeps CSP/zero-network). Build/typecheck/lint green.
+  DoD: mono tokens defined ✅; RTL ✅; simplicity-first layout ✅. REMAINING: reviewed live by Yehiel (built without a local render); entity-highlight coloring; self-hosted font (P0I-05) optional; iterate on feedback.
 - [ ] **P2W-06** Deploy Mechikon on the `mechikon.bai-solutions…` subdomain + cross-link from BAI + install-extension link
   Owner: unassigned
   Scope: own Vercel project on the subdomain (isolation decided — see header); DNS CNAME from the BAI domain; prominent link from the main BAI site to the tool; wire the CWS install link (P5-05). Verify `crossOriginIsolated` is true and zero analytics on the origin.
@@ -181,12 +181,14 @@ a blocker. The Mechikon build stays in THIS repo (open-source/AGPL), never merge
 
 ## P3 — files (no PDF — see separate track)
 
-- [ ] **P3-01** DOCX in/out (mammoth read, `docx` write with placeholders)
-  Owner: unassigned
-  DoD: synthetic Hebrew docx anonymizes and downloads; text intact apart from placeholders.
-- [ ] **P3-02** XLSX in/out (SheetJS read + write)
-  Owner: unassigned
-  DoD: integer-looking cells never gain a spurious `.0` (would break ID/phone detection — server lesson); round-trip test.
+- [~] **P3-01** DOCX in/out (mammoth read, `docx` write with placeholders)
+  Owner: yehieladam
+  Scope: **READ wired** — `web/src/worker/extract.ts` uses mammoth (lazy) to extract docx text → anonymize → show. REMAINING: docx WRITE (download an anonymized .docx with placeholders in place), not just text output.
+  DoD: read ✅ (via the file-upload flow); write (download) pending.
+- [~] **P3-02** XLSX in/out (SheetJS read + write)
+  Owner: yehieladam
+  Scope: **READ wired + VERIFIED** — SheetJS (lazy) extracts sheet text → anonymize → show (screenshot-tested with a Hebrew PII sheet: ID/phone/email detected). REMAINING: xlsx WRITE, and guard integer-looking cells from a spurious `.0` (server lesson).
+  DoD: read ✅; write + `.0` guard pending.
 
 ## P4 — warm model + self-host
 

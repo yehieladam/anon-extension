@@ -13,10 +13,16 @@ import { restore } from "@engine/restore";
 import type { AnonymizeResult } from "@engine/types";
 import type { KeyRow } from "@engine/types";
 import type { RestoreResult } from "@engine/restore";
+import { extractText } from "./extract";
 
 const api = {
   /** Detect (deterministic) → resolve → anonymize. Instant, no model. */
   anonymize(text: string): AnonymizeResult {
+    return anonymizeDeterministic(text);
+  },
+  /** Extract text from an uploaded file (docx/xlsx/pdf) then anonymize it. */
+  async anonymizeFile(fileName: string, buffer: ArrayBuffer): Promise<AnonymizeResult> {
+    const text = await extractText(fileName, buffer);
     return anonymizeDeterministic(text);
   },
   /** Put original values back using the key (tolerant matcher). */
