@@ -60,14 +60,13 @@ unit test with the same valid/invalid cases the server checks use.
 - [x] **P1-12** `resolve.ts` — overlap resolution (PRIORITY map, deterministic > NER)
   Owner: yehieladam
   DoD: greedy keep-strongest by PRIORITY → score → length → start → type (total order = deterministic regardless of source concat order); 7 tests (ID-inside-PERSON, adjacent survive, score/length tiebreaks, reading-order output, equal-strength collapse, no input mutation).
-- [ ] **P1-13** `anonymize.ts` — typed Hebrew placeholders, **LLM-round-trip-safe alphabet**, consistent per surface value
-  Owner: unassigned
-  Scope (Fable 5): **do NOT use ASCII `"` in placeholders** — `[ת"ז_1]` gets smart-quoted by ChatGPT/Word (`”`, U+05F4 `״`) and silently breaks restore. **LOCKED DECISION 2026-08-03: use Hebrew gershayim U+05F4 → `[ת״ז_1]`** (reads natural to a lawyer, LLM-safe). Consistency map keyed on `(NFC-normalized + trimmed + whitespace-collapsed + quote-unified value, type)`; deterministic numbering by first appearance in reading order; the SAME map instance shared across text/PDF/docx handlers (engine invariant).
-  DoD: port of server `anonymize.py` with the safe alphabet; same value → same placeholder across surfaces; numbering in reading order; tests incl. curly-apostrophe twins (`ג'ורג'`).
-- [ ] **P1-14** `key.ts` — canonical `key.v1` JSON + CSV export (restore-compatible)
-  Owner: unassigned
-  Scope (Fable 5): canonical = versioned JSON `{version, createdAt, docId: SHA-256(source), scheme, rows:[{placeholder,type,value,count}]}`; `docId` lets restore warn "key belongs to a different document". CSV = RFC-4180-quoted + UTF-8 BOM as the human/Excel export (bare CSV breaks on Hebrew values with commas/quotes/newlines).
-  DoD: JSON + CSV round-trip lossless incl. Hebrew punctuation; docId mismatch surfaced; columns documented.
+- [x] **P1-13** `anonymize.ts` — typed Hebrew placeholders (U+05F4), consistent per surface value
+  Owner: yehieladam
+  Scope: gershayim U+05F4 labels (`[ת״ז_1]`, `[ח״פ_2]`); per-type numbering by first appearance in reading order; same value → same placeholder. **Design note:** consistency is keyed on the EXACT surface value (not a normalized form) so `restore(anonymize(text))` is byte-exact — collapsing different surfaces into one placeholder would make restore lossy. Tolerance for LLM-mangled placeholder TOKENS lives in P1-15, not here.
+  DoD: 6 tests (placeholders + key rows, repeat→same placeholder, per-type reading-order numbering, U+05F4 not ASCII quote, empty spans, independent per-type counters). Suite green.
+- [x] **P1-14** `key.ts` — canonical `key.v1` JSON + CSV export (restore-compatible)
+  Owner: yehieladam
+  Scope: canonical `key.v1` JSON `{version, docId?, createdAt?, rows:[{placeholder,original,type}]}` (docId/createdAt set by the caller — engine stays pure, no Date/hash here); CSV = RFC-4180 (BOM added by the download layer). 6 tests: CSV + JSON round-trips lossless incl. Hebrew with commas/quotes/newlines; header-only for empty; malformed key rejected.
 - [ ] **P1-15** `restore.ts` — tolerant placeholders → originals (**MVP** — see decision note above)
   Owner: unassigned
   Scope (Fable 5): tolerant matcher — NFC normalize, quote-variant class (`" ” ״ ׳ '`), optional whitespace, and **strip Unicode bidi controls** (LRM/RLM U+200E/F, FSI/PDI U+2066–2069) that LLMs/RTL editors inject invisibly. Unmatched placeholders → listed report, never silent. Source that already looks like a placeholder → warn before anonymizing.
