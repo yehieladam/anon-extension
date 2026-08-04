@@ -19,6 +19,8 @@ export default tseslint.config(
       "node_modules/**",
       // Local screenshot/verification scratch scripts (not product code, not committed).
       "_*.mjs",
+      // Node build-time tooling for test fixtures (uses node globals), not shipped product code.
+      "web/test-fixtures/**/*.mjs",
     ],
   },
   js.configs.recommended,
