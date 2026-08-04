@@ -19,7 +19,11 @@ export type DeterministicEntityType =
   | "IL_INSURED" // insured-person number (מבוטח)
   | "EMAIL_ADDRESS";
 
-export type EntityType = NerEntityType | DeterministicEntityType;
+/** User-added terms to redact (things the automatic detectors missed). Highest priority — an
+ * explicit human choice always wins. */
+export type ManualEntityType = "MANUAL";
+
+export type EntityType = NerEntityType | DeterministicEntityType | ManualEntityType;
 
 /**
  * Overlap-resolution priority (port of the server's analyze.py PRIORITY map).
@@ -27,6 +31,7 @@ export type EntityType = NerEntityType | DeterministicEntityType;
  * the strongest span by (priority, score, length).
  */
 export const PRIORITY: Readonly<Record<EntityType, number>> = {
+  MANUAL: 4, // explicit user choice wins over every automatic detection
   ISRAELI_ID: 3,
   IL_COMPANY: 3,
   IL_IBAN: 3,

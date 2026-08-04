@@ -68,6 +68,7 @@ const TYPE_LABEL: Record<EntityType, string> = {
   PERSON: "entity.name",
   ORGANIZATION: "entity.org",
   LOCATION: "entity.place",
+  MANUAL: "entity.manual",
 };
 
 /** Split on placeholder tokens and render each as a subtle pill so the redactions read clearly. */
@@ -105,6 +106,10 @@ export function App() {
   );
   const [restoreInput, setRestoreInput] = useState("");
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
+  // Manual redaction — user-added terms the automatic detectors missed.
+  const [manualTerms, setManualTerms] = useState<string[]>([]);
+  const [manualInput, setManualInput] = useState("");
+  const [showManualInput, setShowManualInput] = useState(false);
   // Restore-key download/upload (KEY-01): the key is in-memory by default; download is opt-in and
   // encryption (passphrase) is on by default.
   const [encryptKey, setEncryptKey] = useState(true);
@@ -132,9 +137,10 @@ export function App() {
     setStatus("working");
     setFileError(false);
     setSource({ kind: "text", text });
+    setManualTerms([]);
     try {
       // Instant deterministic (or full, if the model is already loaded), then load NER for names.
-      showResult(await getEngine().anonymizeSmart(text));
+      showResult(await getEngine().anonymizeSmart(text, []));
       void loadNer();
     } finally {
       setStatus(null);
@@ -149,10 +155,11 @@ export function App() {
       setStatus("reading");
       setFileError(false);
       setScannedNotice(false);
+      setManualTerms([]);
       try {
         const buffer = await file.arrayBuffer();
         setSource({ kind: "file", name: file.name, buffer });
-        const { result: anonymized, bytes } = await getEngine().redactFile(file.name, buffer);
+        const { result: anonymized, bytes } = await getEngine().redactFile(file.name, buffer, []);
         showResult(anonymized);
         if (bytes) {
           setRedacted({ bytes, name: redactedName(file.name), mime: mimeFor(file.name) });
@@ -185,13 +192,17 @@ export function App() {
     let cancelled = false;
     void (async () => {
       if (source.kind === "text") {
-        const upgraded = await getEngine().anonymizeSmart(source.text);
+        const upgraded = await getEngine().anonymizeSmart(source.text, manualTerms);
         if (!cancelled) {
           showResult(upgraded);
         }
         return;
       }
-      const { result: upgraded, bytes } = await getEngine().redactFile(source.name, source.buffer);
+      const { result: upgraded, bytes } = await getEngine().redactFile(
+        source.name,
+        source.buffer,
+        manualTerms,
+      );
       if (cancelled) {
         return;
       }
@@ -203,7 +214,52 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [ner.status, source, showResult]);
+  }, [ner.status, source, showResult, manualTerms]);
+
+  // Re-run the current source with a new set of manual terms (add/remove a hand-picked redaction).
+  const reprocessManual = useCallback(
+    async (terms: string[]) => {
+      if (!source) {
+        return;
+      }
+      setStatus(source.kind === "file" ? "reading" : "working");
+      try {
+        if (source.kind === "text") {
+          showResult(await getEngine().anonymizeSmart(source.text, terms));
+        } else {
+          const { result, bytes } = await getEngine().redactFile(source.name, source.buffer, terms);
+          showResult(result);
+          if (bytes) {
+            setRedacted({ bytes, name: redactedName(source.name), mime: mimeFor(source.name) });
+          }
+        }
+      } finally {
+        setStatus(null);
+      }
+    },
+    [source, showResult],
+  );
+
+  const onAddManual = useCallback(() => {
+    const term = manualInput.trim();
+    if (term.length === 0 || manualTerms.includes(term)) {
+      setManualInput("");
+      return;
+    }
+    const terms = [...manualTerms, term];
+    setManualTerms(terms);
+    setManualInput("");
+    void reprocessManual(terms);
+  }, [manualInput, manualTerms, reprocessManual]);
+
+  const onRemoveManual = useCallback(
+    (term: string) => {
+      const terms = manualTerms.filter((t) => t !== term);
+      setManualTerms(terms);
+      void reprocessManual(terms);
+    },
+    [manualTerms, reprocessManual],
+  );
 
   const onDownload = useCallback(() => {
     if (!redacted) {
@@ -437,6 +493,13 @@ export function App() {
                     <span className="tabular-nums text-zinc-400">{count}</span>
                   </span>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => setShowManualInput((v) => !v)}
+                  className="inline-flex items-center gap-1 rounded-full border border-dashed border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 transition hover:border-ink hover:text-ink"
+                >
+                  {t("manual.add")}
+                </button>
               </div>
               <div className="flex items-center gap-2">
                 {redacted &&
@@ -487,6 +550,57 @@ export function App() {
                 )}
               </div>
             </div>
+
+            {(showManualInput || manualTerms.length > 0) && (
+              <div className="mb-3 rounded-2xl border border-hairline bg-surface p-3">
+                {showManualInput && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      dir="rtl"
+                      value={manualInput}
+                      onChange={(event) => setManualInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          onAddManual();
+                        }
+                      }}
+                      placeholder={t("manual.placeholder")}
+                      className="min-h-[40px] flex-1 rounded-xl border border-hairline bg-white px-3 text-[14px] outline-none placeholder:text-zinc-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={onAddManual}
+                      disabled={manualInput.trim().length === 0}
+                      className="min-h-[40px] rounded-full bg-ink px-4 text-[14px] font-medium text-white transition hover:opacity-90 disabled:opacity-30"
+                    >
+                      {t("manual.submit")}
+                    </button>
+                  </div>
+                )}
+                {manualTerms.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {manualTerms.map((term) => (
+                      <span
+                        key={term}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs text-ink"
+                      >
+                        {term}
+                        <button
+                          type="button"
+                          onClick={() => onRemoveManual(term)}
+                          aria-label={t("manual.remove")}
+                          className="text-zinc-400 transition hover:text-ink"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {result.key.length > 0 && (
               <>
                 <div

@@ -45,6 +45,14 @@ export function anonymizeDeterministic(text: string): AnonymizeResult {
  * outranks NER via PRIORITY) then anonymized. Callers run NER (async) and pass its spans in.
  */
 export function anonymizeFull(text: string, nerSpans: readonly Span[]): AnonymizeResult {
-  const resolved = resolveOverlaps([...detectDeterministic(text), ...nerSpans]);
+  return anonymizeWith(text, nerSpans);
+}
+
+/**
+ * Deterministic detection PLUS any caller-supplied spans (NER, and/or manual user terms), resolved
+ * together and anonymized. Manual spans (PRIORITY 4) win overlaps; deterministic outranks NER.
+ */
+export function anonymizeWith(text: string, extraSpans: readonly Span[]): AnonymizeResult {
+  const resolved = resolveOverlaps([...detectDeterministic(text), ...extraSpans]);
   return anonymize(text, resolved);
 }

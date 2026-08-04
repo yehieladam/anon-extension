@@ -50,6 +50,13 @@ export const he = {
     policy: "פוליסה",
     insured: "מבוטח",
     email: "אימייל",
+    manual: "ידני",
+  },
+  manual: {
+    add: "+ הוספה ידנית",
+    placeholder: "מילה או מספר להשחרה שהמערכת פספסה…",
+    submit: "הוספה",
+    remove: "הסרה",
   },
   result: {
     found: "נמצאו {{count}} פרטים מזהים",

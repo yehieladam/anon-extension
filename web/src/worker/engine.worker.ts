@@ -16,7 +16,8 @@ import * as Comlink from "comlink";
 // Import from specific engine modules, NOT the @engine/index barrel — the barrel re-exports ner.ts
 // (which pulls transformers.js + onnxruntime's wasm). Keeping that out of this graph is what makes
 // the deterministic path instant and lets the model lazy-load only when NER is used (P0I-02).
-import { anonymizeDeterministic, anonymizeFull } from "@engine/pipeline";
+import { anonymizeDeterministic, anonymizeWith } from "@engine/pipeline";
+import { manualSpans } from "@engine/manual";
 import { restore } from "@engine/restore";
 import type { AnonymizeResult, KeyRow, Span } from "@engine/types";
 import type { RestoreResult } from "@engine/restore";
@@ -40,13 +41,13 @@ function threadCount(): number {
   return isolated ? Math.min(4, Math.max(1, cores)) : 1;
 }
 
-/** Anonymize with NER names when the model is ready, else deterministic-only. */
-async function anonymizeSmart(text: string): Promise<AnonymizeResult> {
-  if (ner === null) {
-    return anonymizeDeterministic(text);
-  }
-  const nerSpans = await ner.recognize(text);
-  return anonymizeFull(text, nerSpans);
+/**
+ * Anonymize with NER names when the model is ready, plus any manual user terms — the terms the user
+ * added by hand for things the detectors missed (highest priority).
+ */
+async function anonymizeSmart(text: string, manualTerms: readonly string[] = []): Promise<AnonymizeResult> {
+  const nerSpans = ner === null ? [] : await ner.recognize(text);
+  return anonymizeWith(text, [...nerSpans, ...manualSpans(text, manualTerms)]);
 }
 
 const api = {
@@ -92,17 +93,17 @@ const api = {
     return anonymizeDeterministic(text);
   },
 
-  /** Deterministic + NER names when the model is ready, else deterministic. */
-  anonymizeSmart(text: string): Promise<AnonymizeResult> {
-    return anonymizeSmart(text);
+  /** Deterministic + NER names (when ready) + manual user terms. */
+  anonymizeSmart(text: string, manualTerms: readonly string[] = []): Promise<AnonymizeResult> {
+    return anonymizeSmart(text, manualTerms);
   },
 
   /**
    * Process an uploaded file: overlay-redact the ORIGINAL (docx/xlsx keep logo/layout; txt/csv plain)
-   * and return the redacted bytes + detection result. Uses NER names when the model is ready.
+   * and return the redacted bytes + detection result. Uses NER names when ready + manual user terms.
    */
-  redactFile(fileName: string, buffer: ArrayBuffer): Promise<FileRedaction> {
-    return redactFile(fileName, buffer, anonymizeSmart);
+  redactFile(fileName: string, buffer: ArrayBuffer, manualTerms: readonly string[] = []): Promise<FileRedaction> {
+    return redactFile(fileName, buffer, (text) => anonymizeSmart(text, manualTerms));
   },
 
   /** Put original values back using the key (tolerant matcher). */
