@@ -11,17 +11,32 @@
  *
  *   $env:RUN_RECALL=1; npx vitest run engine/src/ner.recall.test.ts
  *
+ * Measured baseline (2026-08-04, live dictabert-ner q8, cpu EP, 21 sentences / 54 gold entities):
+ *   PERSON        95.0% recall (19/20)   100.0% precision
+ *   ORGANIZATION  72.2% recall (13/18)    92.9% precision
+ *   LOCATION      93.8% recall (15/16)    78.9% precision
+ *   OVERALL       87.0% recall (47/54)    90.4% precision
+ * PERSON (the entity that matters most for legal PII) is the strongest; ORGANIZATION is the weak spot,
+ * which the manual-add safety net + the "review before sharing" nudge are there to cover.
+ *
  * Match rule (redaction-oriented): a gold entity counts as recalled when a detected span of the same
  * type COVERS it — detected surface contains the gold surface, or vice versa, after normalizing away
  * gershayim/quotes and collapsing whitespace. Containment absorbs the leading Hebrew prepositions the
  * model keeps on the surface (ל/ב/מ/ה/ו/כ/ש), e.g. detected "בירושלים" covers gold "ירושלים": what
  * matters for a redactor is that the gold text ends up inside a redacted span.
  */
+import { setDefaultResultOrder } from "node:dns";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, URL } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { createHebrewNer, type HebrewNer } from "./ner";
 import type { NerEntityType, Span } from "./types";
+
+// Prefer IPv4 when resolving the model host. HuggingFace advertises AAAA records; on a machine with a
+// broken IPv6 route Node's happy-eyeballs picks IPv6 and the TLS handshake is reset (ECONNRESET),
+// which looks like a CDN block but is just dead IPv6. Harness-only (node); browsers fall back on their
+// own. Must run before the transformers fetch.
+setDefaultResultOrder("ipv4first");
 
 interface GoldEntity {
   readonly text: string;
@@ -80,7 +95,8 @@ describeRecall("NER recall on the live model", () => {
   let ner: HebrewNer;
 
   beforeAll(async () => {
-    ner = await createHebrewNer();
+    // node uses onnxruntime-node, whose device is "cpu" (not the browser's "wasm"); q8 output matches.
+    ner = await createHebrewNer({ device: "cpu" });
     for (const sample of samples) {
       const detected = await ner.recognize(sample.text);
       scoreSample(sample, detected, overall, byType);
