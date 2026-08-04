@@ -57,7 +57,7 @@ const NAMED_DECODE: ReadonlyArray<readonly [RegExp, string]> = [
 ];
 
 /** Decode the XML entities that can appear inside a text node (named + numeric). `&amp;` last. */
-function decodeXml(text: string): string {
+export function decodeXml(text: string): string {
   let out = text;
   for (const [pattern, replacement] of NAMED_DECODE) {
     out = out.replace(pattern, replacement);
@@ -70,7 +70,7 @@ function decodeXml(text: string): string {
 }
 
 /** Re-encode text for an XML text node. `&` first so we never double-escape. */
-function encodeXml(text: string): string {
+export function encodeXml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
@@ -171,7 +171,7 @@ function concatSliceOfNode(concat: string, segment: Segment): string {
 }
 
 /** docx: body + headers + footers + notes, in reading order. */
-const DOCX_PART = /^word\/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$/;
+export const DOCX_PART = /^word\/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$/;
 
 async function loadZip(buffer: ArrayBuffer) {
   const JSZip = (await import("jszip")).default;
