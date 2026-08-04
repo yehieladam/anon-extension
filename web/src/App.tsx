@@ -4,6 +4,7 @@ import type { AnonymizeResult } from "@engine/types";
 import type { EntityType } from "@engine/types";
 import type { RestoreResult } from "@engine/restore";
 import { getEngine } from "./worker/engineClient";
+import { useNetworkCount } from "./lib/useNetworkCount";
 
 /** AGPL-3.0 §13: users interacting over a network must be offered the corresponding source. */
 const SOURCE_URL = "https://github.com/yehieladam/anon-extension";
@@ -45,6 +46,7 @@ function highlight(text: string): ReactNode[] {
 
 export function App() {
   const { t } = useTranslation();
+  const networkCount = useNetworkCount();
 
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<null | "working" | "reading">(null);
@@ -148,9 +150,12 @@ export function App() {
         <span className="text-[19px] font-semibold tracking-tight" dir="ltr">
           Mechikon
         </span>
-        <span className="inline-flex items-center gap-1.5 text-xs text-zinc-400">
-          <span className="h-1.5 w-1.5 rounded-full bg-zinc-900" aria-hidden="true" />
-          {t("trust.badge.zero")}
+        <span className="inline-flex items-center gap-1.5 text-xs text-zinc-400" aria-live="polite">
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${networkCount === 0 ? "bg-emerald-500" : "bg-amber-500"}`}
+            aria-hidden="true"
+          />
+          {t("trust.badge.count", { count: networkCount })}
         </span>
       </header>
 
