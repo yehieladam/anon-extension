@@ -23,8 +23,8 @@ not a technical one. The privacy-by-architecture story IS the product.
 > to install the extension (CWS). Dedicated subdomain = clean `crossOriginIsolated` (multi-threaded
 > WASM) and zero analytics/telemetry on that origin (a trust requirement — see `docs/trust.md`).
 > The **NER model is self-hosted** (served same-origin/CDN with COOP/COEP-compatible CORP headers,
-> aggressively cached) — brings P4-02 forward. Owners: **@yehieladam → web app (P2W)**,
-> **@nadavnbs → extension (P2, P5)**. Embedding/isolation details in P2W-06.
+> aggressively cached) — brings P4-02 forward. **Yehiel owns all tracks** (sole developer).
+> Embedding/isolation details in P2W-06.
 >
 > **Decision (2026-08-03): PDF + OCR are IN v1; single unified launch.** No early text-only launch —
 > v1 ships everything together including PDF redaction and scanned-PDF OCR (see the File-parsing note
@@ -58,9 +58,10 @@ repo, deployed to the BAI portal) already exists and is NOT part of this repo.
 
 ## The users (of the codebase)
 
-Two developers — **Yehiel** (`@yehieladam`) and **Nadav** (`@nadavnbs`) — who may work on the same
-tasks. Both rely on Claude to write most of the code. Explain what you do in plain terms; give exact
-**Windows** commands when the user must run something.
+**Yehiel** (`@yehieladam`) is the **sole developer** (as of 2026-08-04; Nadav is no longer on the
+project). He relies on Claude to write most of the code. Explain what you do in plain terms; give exact
+**Windows** commands when the user must run something. `main` protection's 1-review is satisfied by his
+admin-merge.
 
 ## Tech stack (use exactly these)
 
