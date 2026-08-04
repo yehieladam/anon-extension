@@ -21,8 +21,8 @@ export { isValidIsraeliId, israeliIdRecognizer } from "./recognizers/israeliId";
 export { isValidIsraeliPhone, israeliPhoneRecognizer } from "./recognizers/israeliPhone";
 export { isValidIsraeliCompany, israeliCompanyRecognizer } from "./recognizers/israeliCompany";
 export { isValidIsraeliIban, israeliIbanRecognizer } from "./recognizers/israeliIban";
-// TODO(P1-06): export israeliCaseRecognizer from "./recognizers/israeliCase"
-// TODO(P1-07): export israeliLandRecognizer from "./recognizers/israeliLand"
+export { israeliCaseRecognizer } from "./recognizers/israeliCase";
+export { israeliLandRecognizer } from "./recognizers/israeliLand";
 // TODO(P1-08): export israeliPolicyRecognizer from "./recognizers/israeliPolicy"
 // TODO(P1-09): export israeliInsuredRecognizer from "./recognizers/israeliInsured"
 // TODO(P1-10): export emailRecognizer from "./recognizers/email"
