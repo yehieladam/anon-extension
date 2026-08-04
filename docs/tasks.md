@@ -57,9 +57,9 @@ unit test with the same valid/invalid cases the server checks use.
   Owner: unassigned
   Scope: WASM default + `numThreads=1`; the Phase-0 tokenizer `\"`/`\'` `/u` shim; reconstruct null char offsets; strip/re-join `##` wordpieces (hyphenated names). See `browser-poc/PHASE0_FINDINGS.md` — all three fixes are mandatory.
   DoD: recall harness vs `browser-poc/ner_testset.json` ≥ 88.89% (server parity); unit tests for offset/`##` reconstruction with recorded model outputs.
-- [ ] **P1-12** `resolve.ts` — overlap resolution (PRIORITY map, deterministic > NER)
-  Owner: unassigned
-  DoD: port of server `analyze.py` `PRIORITY` + greedy keep-strongest; tests for ID-inside-NER-span and adjacent-span cases; output non-overlapping, reading order.
+- [x] **P1-12** `resolve.ts` — overlap resolution (PRIORITY map, deterministic > NER)
+  Owner: yehieladam
+  DoD: greedy keep-strongest by PRIORITY → score → length → start → type (total order = deterministic regardless of source concat order); 7 tests (ID-inside-PERSON, adjacent survive, score/length tiebreaks, reading-order output, equal-strength collapse, no input mutation).
 - [ ] **P1-13** `anonymize.ts` — typed Hebrew placeholders, **LLM-round-trip-safe alphabet**, consistent per surface value
   Owner: unassigned
   Scope (Fable 5): **do NOT use ASCII `"` in placeholders** — `[ת"ז_1]` gets smart-quoted by ChatGPT/Word (`”`, U+05F4 `״`) and silently breaks restore. **LOCKED DECISION 2026-08-03: use Hebrew gershayim U+05F4 → `[ת״ז_1]`** (reads natural to a lawyer, LLM-safe). Consistency map keyed on `(NFC-normalized + trimmed + whitespace-collapsed + quote-unified value, type)`; deterministic numbering by first appearance in reading order; the SAME map instance shared across text/PDF/docx handlers (engine invariant).
