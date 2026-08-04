@@ -35,20 +35,30 @@ const CSP = [
   "connect-src 'self' https://huggingface.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co",
 ].join("; ");
 
-function securityHeaders(): Plugin {
-  const setHeaders = (_req: IncomingMessage, res: ServerResponse, next: () => void): void => {
+/**
+ * `withCsp` controls whether the strict CSP is attached. The dev server injects INLINE scripts and
+ * uses eval for HMR/react-refresh, which the strict `script-src 'self'` would block (blank page), so
+ * dev sets only COOP/COEP. Preview mirrors production (vercel.json) with the full CSP.
+ */
+function isolationHeaders(withCsp: boolean) {
+  return (_req: IncomingMessage, res: ServerResponse, next: () => void): void => {
     res.setHeader("Cross-Origin-Opener-Policy", COOP);
     res.setHeader("Cross-Origin-Embedder-Policy", COEP);
-    res.setHeader("Content-Security-Policy", CSP);
+    if (withCsp) {
+      res.setHeader("Content-Security-Policy", CSP);
+    }
     next();
   };
+}
+
+function securityHeaders(): Plugin {
   return {
     name: "mechikon-security-headers",
     configureServer(server) {
-      server.middlewares.use(setHeaders);
+      server.middlewares.use(isolationHeaders(false)); // dev: COOP/COEP only (HMR needs inline/eval)
     },
     configurePreviewServer(server) {
-      server.middlewares.use(setHeaders);
+      server.middlewares.use(isolationHeaders(true)); // preview mirrors prod (full CSP)
     },
   };
 }
