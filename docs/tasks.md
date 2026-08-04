@@ -44,12 +44,12 @@ unit test with the same valid/invalid cases the server checks use.
 - [x] **P1-07** `recognizers/israeliLand.ts` — IL_LAND (גוש/חלקה)
   Owner: yehieladam
   DoD: keyword-anchored (both גוש and חלקה + numbers), optional /sub-plot; single span; 6 tests incl. keyword-only and lone-חלקה negatives. Server file not vendored — faithful re-impl.
-- [ ] **P1-08** `recognizers/israeliPolicy.ts` — IL_POLICY (מספר פוליסה)
-  Owner: unassigned
-  DoD: port of `israeli_policy.py`; pattern + context tests.
-- [ ] **P1-09** `recognizers/israeliInsured.ts` — IL_INSURED (מספר מבוטח)
-  Owner: unassigned
-  DoD: port of `israeli_insured.py`; pattern + context tests.
+- [x] **P1-08** `recognizers/israeliPolicy.ts` — IL_POLICY (מספר פוליסה)
+  Owner: yehieladam
+  DoD: context-anchored on פוליסה (no national format exists); flags the number token only; score 0.9; 4 tests incl. hyphenated tokens + keyword-only negative. Server file not vendored — faithful re-impl.
+- [x] **P1-09** `recognizers/israeliInsured.ts` — IL_INSURED (מספר מבוטח)
+  Owner: yehieladam
+  DoD: context-anchored on מבוטח; flags the number only; ignores the bare word; score 0.9; 4 tests. Server file not vendored — faithful re-impl.
 - [ ] **P1-10** `recognizers/email.ts` — EMAIL_ADDRESS (replaces Presidio's built-in)
   Owner: unassigned
   DoD: RFC-sane regex; tests incl. `.co.il` addresses; no false hits on plain Hebrew text.
