@@ -750,7 +750,7 @@ export function App() {
                 </p>
               )}
 
-              <div className="mt-4 rounded-2xl border border-hairline bg-surface p-4">
+              <div className="mt-4 border-t border-hairline pt-4">
                 <div className="text-[13px] font-medium text-ink">{t("restoreFile.title")}</div>
                 <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("restoreFile.explain")}</p>
                 <label className="mt-3 inline-flex min-h-[40px] cursor-pointer items-center gap-2 rounded-full border border-hairline bg-white px-5 text-[14px] font-medium text-ink transition hover:bg-surface">
