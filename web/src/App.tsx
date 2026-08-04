@@ -130,26 +130,32 @@ export function App() {
           : t("input.uploadHint");
 
   const steps = [
-    t("flow.step1.title"),
-    t("flow.step2.title"),
-    t("flow.step3.title"),
-    t("flow.step4.title"),
+    { title: t("flow.step1.title"), desc: t("flow.step1.desc") },
+    { title: t("flow.step2.title"), desc: t("flow.step2.desc") },
+    { title: t("flow.step3.title"), desc: t("flow.step3.desc") },
+    { title: t("flow.step4.title"), desc: t("flow.step4.desc") },
   ];
+
+  const trustItems = [
+    { key: "noSignup", d: "M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" },
+    { key: "offline", d: "M4 4l16 16M8.5 8.6A9 9 0 0 0 5 12m14 0a9 9 0 0 0-3.2-4M12 20h.01" },
+    { key: "openSource", d: "M9 18l-6-6 6-6m6 12l6-6-6-6" },
+  ] as const;
 
   return (
     <div dir="rtl" className="min-h-screen bg-white text-ink">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
-        <span className="flex items-center gap-2">
+        <span className="flex items-center gap-2.5">
           <img
             src="/logo.png"
             alt=""
-            className="h-7 w-7 object-contain"
+            className="h-11 w-11 object-contain"
             aria-hidden="true"
             onError={(event) => {
               event.currentTarget.style.display = "none";
             }}
           />
-          <span className="text-[17px] font-semibold tracking-tight">{t("app.name")}</span>
+          <span className="text-[19px] font-semibold tracking-tight">{t("app.name")}</span>
         </span>
         <span className="inline-flex items-center gap-1.5 text-xs text-zinc-400">
           <span className="h-1.5 w-1.5 rounded-full bg-zinc-900" aria-hidden="true" />
@@ -315,27 +321,51 @@ export function App() {
           </details>
         </section>
 
-        <section className="mt-20 border-t border-hairline pt-10">
-          <ol className="grid grid-cols-2 gap-x-8 gap-y-6 sm:grid-cols-4">
-            {steps.map((title, index) => (
-              <li key={title}>
-                <div className="text-xs tabular-nums text-zinc-300">
-                  {String(index + 1).padStart(2, "0")}
+        <section className="mt-24">
+          <h2 className="text-center text-xs font-semibold uppercase tracking-[0.15em] text-zinc-400">
+            {t("flow.heading")}
+          </h2>
+          <ol className="mt-8 grid gap-4 sm:grid-cols-4">
+            {steps.map((step, index) => (
+              <li
+                key={step.title}
+                className="rounded-2xl border border-hairline bg-white p-5 transition hover:border-zinc-300"
+              >
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-ink text-xs font-semibold tabular-nums text-white">
+                  {index + 1}
                 </div>
-                <div className="mt-1.5 text-[15px] font-medium leading-snug">{title}</div>
+                <div className="mt-3 text-[15px] font-semibold leading-snug">{step.title}</div>
+                <div className="mt-1.5 text-[13px] leading-relaxed text-zinc-500">{step.desc}</div>
               </li>
             ))}
           </ol>
         </section>
 
-        <section className="mt-16 grid gap-6 sm:grid-cols-3">
-          {[t("trust.strip.noSignup"), t("trust.strip.offline"), t("trust.strip.openSource")].map(
-            (claim) => (
-              <p key={claim} className="text-[13px] leading-relaxed text-zinc-500">
-                {claim}
-              </p>
-            ),
-          )}
+        <section className="mt-16 rounded-3xl bg-surface px-6 py-10 sm:px-10">
+          <h2 className="text-center text-lg font-semibold tracking-tight">{t("trust.heading")}</h2>
+          <div className="mt-8 grid gap-8 sm:grid-cols-3">
+            {trustItems.map((item) => (
+              <div key={item.key} className="text-center sm:text-right">
+                <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-xl bg-white shadow-sm sm:mx-0">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d={item.d}
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+                <div className="mt-3 text-[15px] font-semibold">
+                  {t(`trust.items.${item.key}.title`)}
+                </div>
+                <div className="mt-1.5 text-[13px] leading-relaxed text-zinc-500">
+                  {t(`trust.items.${item.key}.text`)}
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
       </main>
 
