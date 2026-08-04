@@ -25,7 +25,7 @@ export { israeliCaseRecognizer } from "./recognizers/israeliCase";
 export { israeliLandRecognizer } from "./recognizers/israeliLand";
 export { israeliPolicyRecognizer } from "./recognizers/israeliPolicy";
 export { israeliInsuredRecognizer } from "./recognizers/israeliInsured";
-// TODO(P1-10): export emailRecognizer from "./recognizers/email"
+export { emailRecognizer } from "./recognizers/email";
 // TODO(P1-11): export the NER wrapper from "./ner" (tokenizer /u shim + offset/## fixes —
 //              see browser-poc/PHASE0_FINDINGS.md; mandatory, not optional)
 // TODO(P1-12): export resolveOverlaps from "./resolve" (uses PRIORITY above)
