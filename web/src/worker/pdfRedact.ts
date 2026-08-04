@@ -14,9 +14,11 @@ import {
   type PageLines,
   type RedactRect,
 } from "@engine/pdfText";
+import { toReplacements } from "@engine/overlay";
 import type { AnonymizeResult } from "@engine/types";
 import { layerB, layerC, normalizeForLeak } from "@engine/pdfVerify";
 import type { RedactedFile, Anonymize } from "./officeRedact";
+import { collectOutlineItems, sanitizeMetadata, type OutlineItem } from "./pdfSanitize";
 
 // reason: mupdf's ESM/WASM surface (PDFDocument, PDFPage, StructuredText walker) is not worth
 // modelling in the type system; it is narrowly used here and behind a dynamic import.
@@ -69,26 +71,62 @@ export async function extractPdfMapped(buffer: ArrayBuffer): Promise<MappedText>
   return mappedFromDoc(doc);
 }
 
-/** Re-extract the redacted bytes through the SAME pipeline and assert no detected value survives. */
+/** Read every metadata channel's text (Info values, outline titles, annotation text) DECODED. */
+function readMetadataChannels(doc: any): string {
+  const parts: string[] = [];
+  const info = doc.getTrailer().get("Info");
+  if (info && info.isDictionary && info.isDictionary()) {
+    for (const key of ["Author", "Title", "Subject", "Keywords", "Creator", "Producer"]) {
+      const value = info.get(key);
+      if (value && value.asString) {
+        parts.push(value.asString());
+      }
+    }
+  }
+  for (const item of collectOutlineItems(doc)) {
+    parts.push(item.title);
+  }
+  const pageCount: number = doc.countPages();
+  for (let i = 0; i < pageCount; i += 1) {
+    const annots = doc.loadPage(i).getAnnotations?.() ?? [];
+    for (const annot of annots) {
+      if (annot.getContents) {
+        parts.push(annot.getContents());
+      }
+    }
+  }
+  return parts.join("\n");
+}
+
+/**
+ * Re-open the redacted bytes and assert no detected value survives — in the page text (layer A), in the
+ * raw bytes/streams (layer B), in the structure (layer C), AND in the metadata channels read DECODED
+ * (PDF stores Hebrew strings as hex-ASCII `<FEFF…>`, so a raw-byte scan is blind to them — decoding and
+ * reading Info/outlines/annotations is the reliable check there).
+ */
 async function selfVerify(bytes: Uint8Array, needles: readonly string[]): Promise<void> {
   if (needles.length === 0) {
     return;
   }
-  // Layer A — re-extract through pdfText (same bidi reorder) and check every value is gone, even
-  // after separator/bidi normalization and in reversed run order.
-  const reExtracted = await extractPdfMapped(bytes.buffer as ArrayBuffer);
-  const normText = normalizeForLeak(reExtracted.text);
+  const mupdf: any = await import("mupdf");
+  const doc = mupdf.PDFDocument.openDocument(bytes, "application/pdf");
+  const bodyText = mappedFromDoc(doc).text;
+  const metaText = readMetadataChannels(doc);
+  const normBody = normalizeForLeak(bodyText);
+  const normMeta = normalizeForLeak(metaText);
   const reversed = (s: string): string => [...s].reverse().join("");
+  const present = (haystack: string, needle: string): boolean =>
+    haystack.includes(needle) || haystack.includes(reversed(needle));
   const layerAHits = needles.filter((n) => {
     const nn = normalizeForLeak(n);
-    return nn.length > 0 && (normText.includes(nn) || normText.includes(reversed(nn)));
+    return nn.length > 0 && (present(normBody, nn) || present(normMeta, nn));
   });
   // Layers B + C — raw-byte scan (incl. inflated streams) and structure check.
   const b = await layerB(bytes, needles);
   const c = layerC(bytes);
   if (layerAHits.length > 0 || !b.pass || !c.pass) {
     throw new Error(
-      `PDF redaction self-verify FAILED (layerA=${layerAHits.join(",") || "ok"} ` +
+      `PDF redaction self-verify FAILED (layerA/meta=${layerAHits.join(",") || "ok"} ` +
         `layerB=${b.hits.join(",") || "ok"} layerC=eof:${c.eofCount}/sx:${c.startxrefCount})`,
     );
   }
@@ -106,12 +144,45 @@ export async function redactPdf(buffer: ArrayBuffer, anonymize: Anonymize): Prom
   const mupdf: any = await import("mupdf");
   const doc = mupdf.PDFDocument.openDocument(new Uint8Array(buffer), "application/pdf");
   const mapped = mappedFromDoc(doc);
-  const result: AnonymizeResult = await anonymize(mapped.text);
 
-  // Detected span → per-line redaction rectangles from the attached glyph quads.
-  const rects: RedactRect[] = result.spans.flatMap((span) =>
-    refsToRects(quadsForSpan(mapped, span.start, span.end)),
-  );
+  // UNIFIED detection pass: the body's logical text PLUS every outline (bookmark) title go through ONE
+  // anonymize call, so the same name is the SAME placeholder in the body and in a bookmark (and the
+  // restore key stays coherent). Body spans become glyph-quad rects; outline spans become string
+  // replacements in the titles.
+  const outlineItems = collectOutlineItems(doc);
+  let combined = mapped.text;
+  const titleRanges: { start: number; end: number; item: OutlineItem }[] = [];
+  for (const item of outlineItems) {
+    combined += "\n";
+    const start = combined.length;
+    combined += item.title;
+    titleRanges.push({ start, end: combined.length, item });
+  }
+
+  const result: AnonymizeResult = await anonymize(combined);
+  const replacements = toReplacements(combined, result);
+  const bodyEnd = mapped.text.length;
+
+  // Body: replacements inside the body → per-line redaction rectangles from the attached glyph quads.
+  const rects: RedactRect[] = replacements
+    .filter((r) => r.end <= bodyEnd)
+    .flatMap((r) => refsToRects(quadsForSpan(mapped, r.start, r.end)));
+
+  // Outlines: rewrite each title with the unified placeholders (same key as the body).
+  for (const { start, end, item } of titleRanges) {
+    const inTitle = replacements.filter((r) => r.start >= start && r.end <= end);
+    if (inTitle.length === 0) {
+      continue;
+    }
+    let rewritten = "";
+    let cursor = start;
+    for (const r of inTitle) {
+      rewritten += combined.slice(cursor, r.start) + r.placeholder;
+      cursor = r.end;
+    }
+    rewritten += combined.slice(cursor, end);
+    item.setTitle(rewritten);
+  }
 
   const PDFPage = mupdf.PDFPage;
   const touchedPages = new Set<number>();
@@ -132,6 +203,10 @@ export async function redactPdf(buffer: ArrayBuffer, anonymize: Anonymize): Prom
         PDFPage.REDACT_TEXT_REMOVE,
       );
   }
+
+  // Strip the invisible metadata leak channels (Info, XMP, embedded files, annotation text). Outlines
+  // were already anonymized above through the unified key.
+  sanitizeMetadata(doc);
 
   // asUint8Array() is a live view into WASM memory — the self-verify below re-opens mupdf and would
   // clobber it. Copy into a JS-owned buffer immediately.

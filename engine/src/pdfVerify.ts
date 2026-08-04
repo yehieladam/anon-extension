@@ -35,6 +35,17 @@ function utf16le(text: string): Uint8Array {
   return bytes;
 }
 
+/** UTF-16BE bytes — the form PDF strings use for non-Latin text (metadata, outlines, annotations). */
+function utf16be(text: string): Uint8Array {
+  const bytes = new Uint8Array(text.length * 2);
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    bytes[i * 2] = code >> 8;
+    bytes[i * 2 + 1] = code & 0xff;
+  }
+  return bytes;
+}
+
 /**
  * Strip format/bidi controls and every space/hyphen variant, so "052­1234567" (soft hyphen) and
  * "052-1234567" both collapse to "0521234567" and cannot hide behind a separator.
@@ -175,6 +186,7 @@ export async function layerB(bytes: Uint8Array, needles: readonly string[]): Pro
     const forms: ReadonlyArray<readonly [string, Uint8Array]> = [
       ["utf-8", utf8Encoder.encode(needle)],
       ["utf-16le", utf16le(needle)],
+      ["utf-16be", utf16be(needle)], // PDF strings (metadata/outlines) use UTF-16BE for non-Latin text
       ["utf-8 (reversed)", utf8Encoder.encode(reverse(needle))],
       ["utf-16le (reversed)", utf16le(reverse(needle))],
     ];
