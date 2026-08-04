@@ -6,7 +6,25 @@
   color-scheme: light;
 }
 
+html,
 body {
   margin: 0;
-  font-family: "Rubik", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+}
+
+body {
+  /* Apple-style system stack: San Francisco on Apple, Segoe UI on Windows, both render
+     Hebrew cleanly. No web-font download (keeps CSP/zero-network intact). */
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial,
+    "Apple Color Emoji", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #ffffff;
+  color: #0a0a0a;
+  text-rendering: optimizeLegibility;
+}
+
+/* Numerals stay LTR inside RTL text. */
+.tnum {
+  font-variant-numeric: tabular-nums;
 }
