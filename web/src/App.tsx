@@ -10,6 +10,27 @@ import { useNetworkCount } from "./lib/useNetworkCount";
 const SOURCE_URL = "https://github.com/yehieladam/anon-extension";
 const COPIED_RESET_MS = 1500;
 
+/** MIME per extension for the redacted-file download. */
+const MIME_BY_EXT: Record<string, string> = {
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  txt: "text/plain;charset=utf-8",
+  csv: "text/csv;charset=utf-8",
+};
+
+/** Insert the "redacted" suffix before the extension: report.docx → report_מושחר.docx */
+function redactedName(fileName: string): string {
+  const dot = fileName.lastIndexOf(".");
+  const base = dot === -1 ? fileName : fileName.slice(0, dot);
+  const ext = dot === -1 ? "" : fileName.slice(dot);
+  return `${base}_מושחר${ext}`;
+}
+
+function mimeFor(fileName: string): string {
+  const ext = fileName.toLowerCase().split(".").pop() ?? "";
+  return MIME_BY_EXT[ext] ?? "application/octet-stream";
+}
+
 /** EntityType → i18n label key, for the per-type count chips. */
 const TYPE_LABEL: Record<EntityType, string> = {
   ISRAELI_ID: "entity.id",
@@ -53,6 +74,9 @@ export function App() {
   const [result, setResult] = useState<AnonymizeResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [fileError, setFileError] = useState(false);
+  const [redacted, setRedacted] = useState<{ bytes: Uint8Array; name: string; mime: string } | null>(
+    null,
+  );
   const [restoreInput, setRestoreInput] = useState("");
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
 
@@ -62,6 +86,7 @@ export function App() {
     setResult(anonymized);
     setRestoreInput(anonymized.anonymizedText);
     setRestoreResult(null);
+    setRedacted(null);
   }, []);
 
   const onAnonymize = useCallback(async () => {
@@ -87,7 +112,11 @@ export function App() {
       setFileError(false);
       try {
         const buffer = await file.arrayBuffer();
-        showResult(await getEngine().anonymizeFile(file.name, buffer));
+        const { result: anonymized, bytes } = await getEngine().redactFile(file.name, buffer);
+        showResult(anonymized);
+        if (bytes) {
+          setRedacted({ bytes, name: redactedName(file.name), mime: mimeFor(file.name) });
+        }
       } catch {
         setFileError(true);
       } finally {
@@ -96,6 +125,21 @@ export function App() {
     },
     [busy, showResult],
   );
+
+  const onDownload = useCallback(() => {
+    if (!redacted) {
+      return;
+    }
+    // reason: Comlink returns a Uint8Array<ArrayBufferLike>, which TS 5.7 will not narrow to the
+    // ArrayBuffer-backed view BlobPart wants; the bytes are a plain copy, so the cast is safe.
+    const blob = new Blob([redacted.bytes as BlobPart], { type: redacted.mime });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = redacted.name;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [redacted]);
 
   const onCopy = useCallback(async () => {
     if (!result) {
@@ -245,26 +289,46 @@ export function App() {
                   </span>
                 ))}
               </div>
-              {result.key.length > 0 && (
-                <button
-                  type="button"
-                  onClick={onCopy}
-                  className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-hairline px-4 text-[13px] font-medium text-ink transition hover:bg-surface"
-                >
-                  {copied ? (
+              <div className="flex items-center gap-2">
+                {redacted && (
+                  <button
+                    type="button"
+                    onClick={onDownload}
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-white transition hover:opacity-90"
+                  >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path
-                        d="M5 12l4.5 4.5L19 7"
+                        d="M12 4v11m0 0l-4-4m4 4l4-4M5 20h14"
                         stroke="currentColor"
-                        strokeWidth="2"
+                        strokeWidth="1.9"
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
                     </svg>
-                  ) : null}
-                  {copied ? t("result.copied") : t("result.copy")}
-                </button>
-              )}
+                    {t("result.download")}
+                  </button>
+                )}
+                {result.key.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={onCopy}
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-hairline px-4 text-[13px] font-medium text-ink transition hover:bg-surface"
+                  >
+                    {copied ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path
+                          d="M5 12l4.5 4.5L19 7"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    ) : null}
+                    {copied ? t("result.copied") : t("result.copy")}
+                  </button>
+                )}
+              </div>
             </div>
             {result.key.length > 0 && (
               <>

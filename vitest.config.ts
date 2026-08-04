@@ -9,7 +9,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["engine/**/*.test.ts", "src/**/*.test.{ts,tsx}"],
+    include: ["engine/**/*.test.ts", "src/**/*.test.{ts,tsx}", "web/src/**/*.test.{ts,tsx}"],
     // CI must not fail while parts of the codebase have no tests yet.
     passWithNoTests: true,
   },
