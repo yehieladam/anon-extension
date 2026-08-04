@@ -98,9 +98,9 @@ build the UI on the main thread and retrofit later.
   Scope: verify the downloaded model file against a known SHA-256 so a compromised CDN can't swap it. Trust + supply-chain.
   DoD: mismatched hash refuses to run with a clear error; expected hash pinned in the build.
 - [ ] **P0I-05** **i18next** set up day 1 (Hebrew-only launch, no hardcoded strings) + **self-hosted Hebrew font**
-  Owner: unassigned
-  Scope: all UI text via keys (he now, en later); professional Hebrew webfont self-hosted (no Google Fonts CDN — breaks CSP/zero-network).
-  DoD: zero hardcoded UI strings; font served locally; RTL correct.
+  Owner: yehieladam
+  Scope: all UI text via keys (he now, en later); professional Hebrew webfont self-hosted (no Google Fonts CDN — breaks CSP/zero-network). **i18next WIRED in P2W-01** (`web/src/i18n.ts` + `web/src/locales/he.ts`, keys from `docs/ux-copy.md`); shell strings all via `t()`. REMAINING: self-host the Hebrew webfont (Rubik is referenced in CSS but not yet vendored) + fill remaining keys as the flow grows.
+  DoD: zero hardcoded UI strings ✅ (shell); font served locally (pending); RTL correct ✅.
 - [ ] **P0I-06** **Playwright** browser-test harness (enforces the PDF/OCR acceptance tests)
   Owner: unassigned
   Scope: node-only Vitest can't verify WASM redaction/OCR; Playwright runs the real-browser 3-layer PDF acceptance test + core flows in CI.
@@ -131,10 +131,10 @@ headers and excluding tracking. Trade-off accepted: slightly less "under the mai
 vs guaranteed isolation. If isolation somehow isn't achievable, NER falls back to `numThreads=1` — not
 a blocker. The Mechikon build stays in THIS repo (open-source/AGPL), never merged into the BAI site code.
 
-- [ ] **P2W-01** React + Vite web app shell on static hosting (Vercel/CDN), imports `@engine/*`
-  Owner: unassigned
-  Scope: serve with COOP/COEP headers so the page is `crossOriginIsolated` → `numThreads > 1` for WASM (unlike the MV3 popup); vendor onnxruntime `.mjs`+`.wasm`; model from HF CDN for now (self-host in P4-02).
-  DoD: `npm run build` web target deploys; NER runs in-browser; no PII network calls (only model fetch).
+- [x] **P2W-01** React + Vite web app shell (`web/`), imports `@engine/*` — SHELL DONE
+  Owner: yehieladam
+  Scope: separate Vite build (`web/vite.config.ts`, `npm run build:web` → `dist-web`), own `web/vercel.json` + a dev/preview COOP/COEP plugin so the page is `crossOriginIsolated`; professional/legal RTL shell (hero, 4-step strip, input placeholder, trust strip, footer) with all strings via i18n; `@engine` alias reused. Build/typecheck/lint green.
+  DoD (shell): ✅ `build:web` produces `dist-web`; ✅ COOP/COEP configured (dev + vercel.json). REMAINING (moves to P2W-02 + P0I-01): wire the actual detect→anonymize→restore flow through the Worker, then verify NER runs in-browser with no PII network calls.
 - [ ] **P2W-02** Paste flow end-to-end: detect → highlight by type → anonymized copy → download key
   Owner: unassigned
   DoD: real detections only; RTL correct; per-type counts; mirrors P2-02 but on the web surface.
