@@ -65,6 +65,8 @@ function securityHeaders(): Plugin {
 
 export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
+  // ES-module workers so the engine worker can code-split (lazy-import mammoth/xlsx/mupdf on demand).
+  worker: { format: "es" },
   plugins: [react(), securityHeaders()],
   resolve: {
     alias: {
@@ -72,7 +74,12 @@ export default defineConfig({
     },
   },
   build: {
+    // es2022 for top-level await (mupdf's wasm loader uses it).
+    target: "es2022",
     outDir: fileURLToPath(new URL("../dist-web", import.meta.url)),
     emptyOutDir: true,
+  },
+  optimizeDeps: {
+    esbuildOptions: { target: "es2022" },
   },
 });

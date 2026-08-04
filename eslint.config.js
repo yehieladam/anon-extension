@@ -17,6 +17,8 @@ export default tseslint.config(
       "dist/**",
       "dist-web/**",
       "node_modules/**",
+      // Local screenshot/verification scratch scripts (not product code, not committed).
+      "_*.mjs",
     ],
   },
   js.configs.recommended,

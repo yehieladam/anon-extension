@@ -24,3 +24,5 @@ scratchpad/
 tmp/
 
 dist-web/
+
+_*.mjs

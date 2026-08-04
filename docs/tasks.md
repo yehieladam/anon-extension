@@ -181,12 +181,14 @@ a blocker. The Mechikon build stays in THIS repo (open-source/AGPL), never merge
 
 ## P3 — files (no PDF — see separate track)
 
-- [ ] **P3-01** DOCX in/out (mammoth read, `docx` write with placeholders)
-  Owner: unassigned
-  DoD: synthetic Hebrew docx anonymizes and downloads; text intact apart from placeholders.
-- [ ] **P3-02** XLSX in/out (SheetJS read + write)
-  Owner: unassigned
-  DoD: integer-looking cells never gain a spurious `.0` (would break ID/phone detection — server lesson); round-trip test.
+- [~] **P3-01** DOCX in/out (mammoth read, `docx` write with placeholders)
+  Owner: yehieladam
+  Scope: **READ wired** — `web/src/worker/extract.ts` uses mammoth (lazy) to extract docx text → anonymize → show. REMAINING: docx WRITE (download an anonymized .docx with placeholders in place), not just text output.
+  DoD: read ✅ (via the file-upload flow); write (download) pending.
+- [~] **P3-02** XLSX in/out (SheetJS read + write)
+  Owner: yehieladam
+  Scope: **READ wired + VERIFIED** — SheetJS (lazy) extracts sheet text → anonymize → show (screenshot-tested with a Hebrew PII sheet: ID/phone/email detected). REMAINING: xlsx WRITE, and guard integer-looking cells from a spurious `.0` (server lesson).
+  DoD: read ✅; write + `.0` guard pending.
 
 ## P4 — warm model + self-host
 

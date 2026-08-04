@@ -9,36 +9,62 @@ const SOURCE_URL = "https://github.com/yehieladam/anon-extension";
 const COPIED_RESET_MS = 1500;
 
 /**
- * Mechikon (P2W-02 + P2W-05) — the paste→anonymize→restore flow in an Apple-minimal, monochrome
- * layout: lots of whitespace, one clear action, near-black ink on white. All engine work runs in a
- * Web Worker (P0I-01); nothing leaves the browser. Deterministic detection for now (ID/phone/…);
- * Hebrew-name NER lands behind an explicit model-load step. Every string is via i18n.
+ * Mechikon (P2W-02 + P2W-05) — paste OR upload a file → anonymize → restore, in an Apple-minimal
+ * monochrome layout. All engine work (incl. docx/xlsx/pdf text extraction) runs in a Web Worker
+ * (P0I-01); nothing leaves the browser. Deterministic detection for now; Hebrew-name NER lands
+ * behind an explicit model-load step. Every string is via i18n.
  */
 export function App() {
   const { t } = useTranslation();
 
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<null | "working" | "reading">(null);
   const [result, setResult] = useState<AnonymizeResult | null>(null);
   const [copied, setCopied] = useState(false);
+  const [fileError, setFileError] = useState(false);
   const [restoreInput, setRestoreInput] = useState("");
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
+
+  const busy = status !== null;
+
+  const showResult = useCallback((anonymized: AnonymizeResult) => {
+    setResult(anonymized);
+    setRestoreInput(anonymized.anonymizedText);
+    setRestoreResult(null);
+  }, []);
 
   const onAnonymize = useCallback(async () => {
     const text = input.trim();
     if (text.length === 0 || busy) {
       return;
     }
-    setBusy(true);
+    setStatus("working");
+    setFileError(false);
     try {
-      const anonymized = await getEngine().anonymize(text);
-      setResult(anonymized);
-      setRestoreInput(anonymized.anonymizedText);
-      setRestoreResult(null);
+      showResult(await getEngine().anonymize(text));
     } finally {
-      setBusy(false);
+      setStatus(null);
     }
-  }, [input, busy]);
+  }, [input, busy, showResult]);
+
+  const onFile = useCallback(
+    async (file: File | undefined) => {
+      if (!file || busy) {
+        return;
+      }
+      setStatus("reading");
+      setFileError(false);
+      try {
+        const buffer = await file.arrayBuffer();
+        showResult(await getEngine().anonymizeFile(file.name, buffer));
+      } catch {
+        setFileError(true);
+      } finally {
+        setStatus(null);
+      }
+    },
+    [busy, showResult],
+  );
 
   const onCopy = useCallback(async () => {
     if (!result) {
@@ -54,6 +80,15 @@ export function App() {
     setRestoreResult(restored);
   }, [restoreInput, result]);
 
+  const statusLine =
+    status === "reading"
+      ? t("input.reading")
+      : status === "working"
+        ? t("input.working")
+        : fileError
+          ? t("input.fileError")
+          : t("input.uploadHint");
+
   const steps = [
     t("flow.step1.title"),
     t("flow.step2.title"),
@@ -63,7 +98,6 @@ export function App() {
 
   return (
     <div dir="rtl" className="min-h-screen bg-white text-ink">
-      {/* Top bar */}
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
         <span className="text-[17px] font-semibold tracking-tight">{t("app.name")}</span>
         <span className="inline-flex items-center gap-1.5 text-xs text-zinc-400">
@@ -73,7 +107,6 @@ export function App() {
       </header>
 
       <main className="mx-auto max-w-2xl px-6">
-        {/* Hero */}
         <section className="pt-16 text-center sm:pt-24">
           <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl">
             {t("hero.title")}
@@ -83,7 +116,6 @@ export function App() {
           </p>
         </section>
 
-        {/* Input */}
         <section className="mt-12">
           <div className="rounded-3xl border border-hairline bg-white p-2 shadow-card">
             <textarea
@@ -95,8 +127,29 @@ export function App() {
               className="min-h-[168px] w-full resize-none rounded-2xl bg-transparent p-4 text-[17px] leading-relaxed outline-none placeholder:text-zinc-400"
               placeholder={t("input.paste.placeholder")}
             />
-            <div className="flex items-center justify-between px-2 pb-1">
-              <span className="text-xs text-zinc-400">{busy ? t("input.working") : " "}</span>
+            <div className="flex items-center justify-between gap-3 px-2 pb-1">
+              <label className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-full border border-hairline px-4 text-[14px] font-medium text-zinc-600 transition hover:bg-surface">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M12 16V4m0 0L7 9m5-5 5 5M5 20h14"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                {t("input.upload")}
+                <input
+                  type="file"
+                  accept=".docx,.xlsx,.xls,.csv,.pdf,.txt"
+                  className="hidden"
+                  disabled={busy}
+                  onChange={(event) => {
+                    void onFile(event.target.files?.[0]);
+                    event.currentTarget.value = "";
+                  }}
+                />
+              </label>
               <button
                 type="button"
                 onClick={onAnonymize}
@@ -107,9 +160,11 @@ export function App() {
               </button>
             </div>
           </div>
+          <p className={`mt-3 px-2 text-xs ${fileError ? "text-amber-600" : "text-zinc-400"}`}>
+            {statusLine}
+          </p>
         </section>
 
-        {/* Result */}
         {result && (
           <section className="mt-8">
             <div className="mb-2 flex items-center justify-between">
@@ -142,7 +197,6 @@ export function App() {
           </section>
         )}
 
-        {/* Restore */}
         <section className="mt-8">
           <details className="group rounded-2xl border border-hairline bg-white">
             <summary className="flex cursor-pointer list-none items-center justify-between p-5 text-sm font-medium text-ink">
@@ -188,7 +242,6 @@ export function App() {
           </details>
         </section>
 
-        {/* How it works */}
         <section className="mt-20 border-t border-hairline pt-10">
           <ol className="grid grid-cols-2 gap-x-8 gap-y-6 sm:grid-cols-4">
             {steps.map((title, index) => (
@@ -202,7 +255,6 @@ export function App() {
           </ol>
         </section>
 
-        {/* Trust */}
         <section className="mt-16 grid gap-6 sm:grid-cols-3">
           {[t("trust.strip.noSignup"), t("trust.strip.offline"), t("trust.strip.openSource")].map(
             (claim) => (
@@ -214,7 +266,6 @@ export function App() {
         </section>
       </main>
 
-      {/* Footer */}
       <footer className="mx-auto mt-24 max-w-2xl px-6 pb-16 text-center text-xs leading-relaxed text-zinc-400">
         <p className="text-zinc-500">{t("trust.tagline")}</p>
         <p className="mx-auto mt-3 max-w-xl">{t("legal.noCollection")}</p>
