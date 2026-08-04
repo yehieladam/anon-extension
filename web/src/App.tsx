@@ -647,7 +647,7 @@ export function App() {
                 >
                   {highlight(result.anonymizedText)}
                 </div>
-                <p className="mt-3 text-xs leading-relaxed text-zinc-400">
+                <p className="mt-3 rounded-xl bg-amber-50/60 px-3 py-2 text-xs leading-relaxed text-zinc-600">
                   {ner.status === "ready" ? t("result.noteNames") : t("result.note")}
                 </p>
 
