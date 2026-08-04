@@ -65,7 +65,7 @@ export const he = {
     unmatched: "{{count}} סימונים לא נמצאו במפתח ונותרו כפי שהם.",
   },
   trust: {
-    badge: { zero: "0 בקשות רשת" },
+    badge: { count: "{{count}} בקשות רשת" },
     heading: "הפרטיות שלכם, לפי ארכיטקטורה",
     items: {
       noSignup: {
