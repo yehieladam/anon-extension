@@ -4,7 +4,7 @@
 > i18next keys (P0I-05) — nothing here is hardcoded. Design identity: professional/legal, navy/slate
 > semantic tokens (P2W-05). RTL throughout. Strings below are canonical; §6 is the consolidated key
 > table. (Produced by a focused UX+copy pass, 2026-08-04; grounded in marketing.md, trust.md,
-> differentiation.md, CLAUDE.md, tasks.md.)
+> differentiation.md, tasks.md.)
 
 ## 0. Voice & copy conventions (binding)
 

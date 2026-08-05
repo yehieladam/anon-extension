@@ -33,3 +33,6 @@ web/test-fixtures/*.pdf
 # Playwright
 test-results/
 playwright-report/
+
+# Local AI assistant config — kept out of the public repo
+CLAUDE.md

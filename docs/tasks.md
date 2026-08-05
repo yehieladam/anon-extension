@@ -3,7 +3,7 @@
 > **How to use:** before starting a task, set `Owner:` to your handle and push/commit that change
 > (claim-first rule — see `CONTRIBUTING.md`). One branch per task: `feat/<id>-short-name`.
 > Phases map to `docs/chrome-extension-plan.md` §6. Check the box only when the task's DoD is met
-> AND the global Definition of Done in `CLAUDE.md` passes.
+> AND the global Definition of Done in `CONTRIBUTING.md` passes.
 
 > **Decision update (2026-08-02): restore IS in the MVP.** This supersedes the "anonymize-only
 > MVP / restore deferred" wording in `docs/chrome-extension-plan.md` §6-§7. `restore.ts` is task
@@ -113,7 +113,7 @@ build the UI on the main thread and retrofit later.
   Owner: unassigned
   DoD: shadcn/ui installed; interactive elements ≥44px; keyboard + screen-reader sane; RTL checked.
 
-## P2W — web app (public front door, ships first — see CLAUDE.md decision 2026-08-02)
+## P2W — web app (public front door, ships first — decision 2026-08-02)
 
 **Owner: @yehieladam** (sole developer — as of 2026-08-04 Yehiel owns every track).
 
@@ -225,7 +225,7 @@ a blocker. The Mechikon build stays in THIS repo (open-source/AGPL), never merge
   DoD: extension published or review feedback triaged into tasks.
 - [ ] **P5-05** "Install the extension" CTA on the BAI-hosted web app → links to the Chrome Web Store listing
   Owner: unassigned
-  Scope: Chrome removed inline install (2018) — this is a link/button to the CWS page, not an in-page install. Lives on the BAI-embedded tool (P2W-06); converts web visitors into returning users (see CLAUDE.md web-first decision).
+  Scope: Chrome removed inline install (2018) — this is a link/button to the CWS page, not an in-page install. Lives on the BAI-embedded tool (P2W-06); converts web visitors into returning users (see the web-first decision).
   DoD: CTA present on the public BAI tool page; links to the live CWS listing (depends on P5-04 published).
 
 ## TR — trust & verifiability (cross-cutting — see `docs/trust.md`)
