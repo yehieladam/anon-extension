@@ -11,6 +11,7 @@ import {
 } from "@engine/keyCrypto";
 import { getEngine } from "./worker/engineClient";
 import { useNetworkCount } from "./lib/useNetworkCount";
+import { mimeFor } from "./lib/mime";
 import { loadNer, useNer } from "./worker/nerController";
 
 /** What produced the current result — so we can re-run it with NER once the model is ready. */
@@ -22,26 +23,12 @@ type Source =
 const SOURCE_URL = "https://github.com/yehieladam/anon-extension";
 const COPIED_RESET_MS = 1500;
 
-/** MIME per extension for the redacted-file download. */
-const MIME_BY_EXT: Record<string, string> = {
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  pdf: "application/pdf",
-  txt: "text/plain;charset=utf-8",
-  csv: "text/csv;charset=utf-8",
-};
-
 /** Insert the "redacted" suffix before the extension: report.docx → report_מושחר.docx */
 function redactedName(fileName: string): string {
   const dot = fileName.lastIndexOf(".");
   const base = dot === -1 ? fileName : fileName.slice(0, dot);
   const ext = dot === -1 ? "" : fileName.slice(dot);
   return `${base}_מושחר${ext}`;
-}
-
-function mimeFor(fileName: string): string {
-  const ext = fileName.toLowerCase().split(".").pop() ?? "";
-  return MIME_BY_EXT[ext] ?? "application/octet-stream";
 }
 
 /** Trigger a browser download of a blob under the given filename. */
@@ -320,7 +307,7 @@ export function App() {
     }
     const bytes = await getEngine().buildTokenDocx(result.anonymizedText);
     const base = source.name.replace(/\.[^.]+$/, "");
-    const blob = new Blob([bytes as BlobPart], { type: MIME_BY_EXT.docx });
+    const blob = new Blob([bytes as BlobPart], { type: mimeFor("f.docx") });
     downloadBlob(blob, `${base}_לAI.docx`);
   }, [result, source]);
 
