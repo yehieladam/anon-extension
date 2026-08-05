@@ -44,6 +44,7 @@ agreement in `CONTRIBUTING.md`; roadmap in `docs/chrome-extension-plan.md`; task
 
 ## License
 
-MIT (see `LICENSE`). Note: third-party model/library licenses (dictabert-ner and its ONNX
-conversion, transformers.js Apache-2.0) must be verified before any public Store launch — not yet
-confirmed cleared.
+**AGPL-3.0-or-later** (see `LICENSE`) — required by `mupdf.js` (AGPL-3.0) and embraced as a trust
+asset: the whole app is open for anyone to read and confirm nothing is uploaded. Note: third-party
+model/library licenses (dictabert-ner and its ONNX conversion, transformers.js Apache-2.0) must be
+verified before any public Store launch — not yet confirmed cleared.

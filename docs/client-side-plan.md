@@ -1,7 +1,7 @@
 # Client-side (in-browser) anonymizer — feasibility & phased plan
 
 > **⚠️ PARTIALLY SUPERSEDED (2026-08-03).** This doc was the original feasibility study. Newer
-> decisions live in `CLAUDE.md` (decision notes) and `docs/tasks.md`. Specifically: PDF is now **IN
+> decisions live in `docs/tasks.md`. Specifically: PDF is now **IN
 > v1** via **`mupdf.js`** true redaction (not pdf.js/pdf-lib, which is called "the hardest gap" below);
 > the q8 model is measured at **~185 MB**, not the "~110 MB" estimate below; OCR uses `tesseract.js`
 > (the only client-side Hebrew OCR — see P5-03 rationale). Read this for background; trust `tasks.md`

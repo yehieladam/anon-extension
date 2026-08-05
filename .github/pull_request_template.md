@@ -12,10 +12,10 @@ Task:
 - [ ] `npm run lint` green locally
 - [ ] `npm test` green locally
 - [ ] No PII and no secrets in code, tests, or fixtures (synthetic data only)
-- [ ] No new network calls (only the model download is allowed — CLAUDE.md hard rule 2)
+- [ ] No new network calls (only the one-time NER model download is allowed)
 - [ ] `engine/` stayed framework-free (no React/DOM/`chrome.*` imports)
 - [ ] The plain-JS spike in `extension/` untouched (until P2-01 retires it)
-- [ ] Docs updated if behavior or stack changed (`CLAUDE.md` / `docs/STACK.md` / `docs/tasks.md`)
+- [ ] Docs updated if behavior or stack changed (`docs/STACK.md` / `docs/tasks.md`)
 
 ## How I tested
 

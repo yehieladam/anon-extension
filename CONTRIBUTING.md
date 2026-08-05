@@ -1,8 +1,7 @@
 # Contributing — the working agreement
 
-Two developers (**@yehieladam**, **@nadavnbs**) who may pick up overlapping work. These rules keep
-that safe. They implement the workflow section of `CLAUDE.md` — if the two ever disagree,
-`CLAUDE.md` wins.
+This file is the source of truth for how changes land: the workflow, the layering rules, and the
+Definition of Done. Read it before opening a PR.
 
 ## The golden path (every change)
 
@@ -23,8 +22,7 @@ that safe. They implement the workflow section of `CLAUDE.md` — if the two eve
    npm run build
    ```
 
-6. **PR → CI green → 1 review → merge.** Never push directly to `main` (it is protected). The
-   other dev reviews; CODEOWNERS requests both of us by default (advisory, since we overlap).
+6. **PR → CI green → review → merge.** Never push directly to `main` (it is protected).
 7. **Conventional commits**, English, no emoji: `feat: …`, `fix: …`, `chore: …`, `docs: …`,
    `test: …`, `refactor: …`. Say *what and why*, not just what.
 
@@ -50,10 +48,9 @@ npm run test:watch # vitest watch mode
   modify or break it. It stays loadable until the React/Vite build (rooted at `src/` +
   `src/manifest.config.ts`) replaces it in **P2** (task P2-01 in `docs/tasks.md`). New UI work
   goes in `src/`, never in `extension/`.
-- No new network calls anywhere — the only allowed fetch is the model download (see `CLAUDE.md`
-  hard rule 2).
+- No new network calls anywhere — the only allowed fetch is the one-time NER model download.
 
-## Definition of Done (copy of CLAUDE.md — the PR template checks these)
+## Definition of Done (the PR template checks these)
 
 - Code + tests (unit for engine logic; NER changes re-run recall vs `browser-poc/ner_testset.json`).
 - `typecheck`, `lint`, `test` green locally and in CI.
@@ -62,7 +59,8 @@ npm run test:watch # vitest watch mode
 
 ## Licensing note
 
-The repo is MIT (see `LICENSE`). Third-party model/library licenses — `dicta-il/dictabert-ner`
-(and its ONNX conversion) and `@huggingface/transformers` (Apache-2.0) — must be **verified for
-redistribution/commercial terms before any public Store launch**; they are not yet confirmed
-cleared.
+The repo is **AGPL-3.0-or-later** (see `LICENSE`) — required by `mupdf.js` (AGPL-3.0) and embraced
+as a trust asset ("read the code — nothing is uploaded"). Third-party model/library licenses —
+`dicta-il/dictabert-ner` (and its ONNX conversion) and `@huggingface/transformers` (Apache-2.0) —
+must be **verified for redistribution/commercial terms before any public Store launch**; they are
+not yet confirmed cleared.

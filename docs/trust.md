@@ -58,7 +58,7 @@ silently change its JavaScript on any visit.** This is a real gap we must not pa
 - **The web app is reach:** zero-friction front door, but it must mitigate the deploy-gap with
   Subresource Integrity (SRI) and a **published build hash** users/experts can compare.
 
-This re-justifies shipping both surfaces (see the web-first decision in `CLAUDE.md`): the web app
+This re-justifies shipping both surfaces (see the web-first decision): the web app
 converts, the extension is the "prove it to me" version. For lawyers, that framing is the sell —
 *"want certainty? install the extension Chrome confirms cannot touch the network."*
 
