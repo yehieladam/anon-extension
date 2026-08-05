@@ -107,9 +107,24 @@ const api = {
   /**
    * Process an uploaded file: overlay-redact the ORIGINAL (docx/xlsx keep logo/layout; txt/csv plain)
    * and return the redacted bytes + detection result. Uses NER names when ready + manual user terms.
+   * `scanOcr` (Stage 5, default off) enables the OCR redaction path for a scanned PDF; `onProgress` is a
+   * Comlink-proxied callback for the slow OCR op (the App shows per-page progress).
    */
-  redactFile(fileName: string, buffer: ArrayBuffer, manualTerms: readonly string[] = []): Promise<FileRedaction> {
-    return redactFile(fileName, buffer, (text) => anonymizeSmart(text, manualTerms));
+  redactFile(
+    fileName: string,
+    buffer: ArrayBuffer,
+    manualTerms: readonly string[] = [],
+    scanOcr = false,
+    onProgress?: (event: { phase: "reading" | "verifying"; page: number; total: number }) => void,
+  ): Promise<FileRedaction> {
+    return redactFile(fileName, buffer, (text) => anonymizeSmart(text, manualTerms), { scanOcr, onProgress });
+  },
+
+  /** Classify a PDF as text-layer vs scanned image (Stage 5) so the App can defer a scan until NER-ready
+   * — avoids a wasted deterministic-only OCR pass before names are available. */
+  async classifyPdf(buffer: ArrayBuffer): Promise<"text" | "scan"> {
+    const { isScannedPdf } = await import("./pdfRedact");
+    return (await isScannedPdf(buffer)) ? "scan" : "text";
   },
 
   /** Put original values back using the key (tolerant matcher). */

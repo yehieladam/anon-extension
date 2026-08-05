@@ -12,6 +12,8 @@
     "dev": "vite",
     "build": "vite build",
     "dev:web": "vite --config web/vite.config.ts",
+    "vendor:ocr": "node scripts/fetch-tesseract-assets.mjs",
+    "prebuild:web": "node scripts/fetch-tesseract-assets.mjs || echo \"WARN: tesseract OCR assets not vendored; scanned-PDF OCR stays unavailable until re-vendored (build continues, site unaffected).\"",
     "build:web": "vite build --config web/vite.config.ts",
     "preview:web": "vite preview --config web/vite.config.ts",
     "typecheck": "tsc --noEmit",

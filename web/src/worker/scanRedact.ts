@@ -38,6 +38,9 @@ export type ScanOcr = (png: Uint8Array) => Promise<OcrPageResult>;
  * exercise a single mechanism (e.g. label-anchor only) through the real pixel-redaction path. */
 export type ScanDetect = (page: OcrPageResult) => Promise<ScanDetection>;
 
+/** Progress for the slow OCR op (the UI must never look hung). `page` is 1-based; `total` is page count. */
+export type ScanProgress = (event: { phase: "reading" | "verifying"; page: number; total: number }) => void;
+
 /** Fixed render resolution for OCR (Stage-1 calibration: 200 DPI keeps heb+eng clean; see docs/ocr-calibration.md). */
 const OCR_RENDER_DPI = 200;
 
@@ -55,6 +58,7 @@ export async function redactScan(
   anonymize: Anonymize,
   ocr: ScanOcr = ocrImage,
   detect: ScanDetect = (page) => detectScanPii(page, anonymize),
+  onProgress?: ScanProgress,
 ): Promise<RedactedFile> {
   const mupdf: any = await import("mupdf");
   const doc = mupdf.PDFDocument.openDocument(new Uint8Array(buffer), "application/pdf");
@@ -67,6 +71,7 @@ export async function redactScan(
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
     const page = doc.loadPage(pageIndex);
     const bounds = page.getBounds(); // [x0, y0, x1, y1] in points (presented orientation)
+    onProgress?.({ phase: "reading", page: pageIndex + 1, total: pageCount });
 
     // Rasterize at the calibrated DPI and OCR the raster (a scan has no text layer to read).
     const pixmap = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false);
@@ -108,7 +113,7 @@ export async function redactScan(
   // Copy out of WASM memory before self-verify re-opens mupdf (asUint8Array is a live view).
   const bytes = new Uint8Array(doc.saveToBuffer(SAFE_SAVE_OPTIONS).asUint8Array());
   // Fixed-point self-verify: re-detect the OUTPUT and require it to find nothing (Stage 4).
-  await selfVerifyScan(bytes, ocr, detect, redactedPages);
+  await selfVerifyScan(bytes, ocr, detect, redactedPages, onProgress);
   const result: AnonymizeResult = { anonymizedText: "", spans: [], key: keyRows };
   return { bytes, result };
 }
@@ -129,6 +134,7 @@ export async function selfVerifyScan(
   ocr: ScanOcr,
   detect: ScanDetect,
   redactedPages: readonly number[],
+  onProgress?: ScanProgress,
 ): Promise<void> {
   if (redactedPages.length === 0) {
     return;
@@ -136,7 +142,9 @@ export async function selfVerifyScan(
   const mupdf: any = await import("mupdf");
   const doc = mupdf.PDFDocument.openDocument(bytes, "application/pdf");
   const scale = OCR_RENDER_DPI / 72;
+  const total: number = doc.countPages();
   for (const pageIndex of redactedPages) {
+    onProgress?.({ phase: "verifying", page: pageIndex + 1, total });
     const pixmap = doc.loadPage(pageIndex).toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false);
     const ocrPage = await ocr(new Uint8Array(pixmap.asPNG()));
     let boxCount: number;

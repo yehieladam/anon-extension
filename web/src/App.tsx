@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import * as Comlink from "comlink";
 import type { AnonymizeResult, EntityType, KeyRow } from "@engine/types";
 import type { RestoreResult } from "@engine/restore";
 import { toKeyFile, fromKeyFile } from "@engine/key";
@@ -12,7 +13,12 @@ import {
 import { getEngine } from "./worker/engineClient";
 import { useNetwork } from "./lib/useNetworkCount";
 import { mimeFor } from "./lib/mime";
+import { isScanOcrEnabled } from "./lib/scanFlag";
+import { scanNoticeFor } from "./lib/scanNotice";
 import { loadNer, useNer } from "./worker/nerController";
+
+/** Progress of the slow scanned-PDF OCR op (Stage 5). "model" = the one-time NER load precedes OCR. */
+type ScanProgress = { phase: "model" | "reading" | "verifying"; page?: number; total?: number };
 
 /** What produced the current result — so we can re-run it with NER once the model is ready. */
 type Source =
@@ -90,6 +96,12 @@ export function App() {
   const [scannedNotice, setScannedNotice] = useState(false);
   const [formulaNotice, setFormulaNotice] = useState(false);
   const [selfVerifyNotice, setSelfVerifyNotice] = useState(false);
+  // Scanned-PDF OCR (Stage 5): a scan awaiting the NER model before its single OCR pass, the live
+  // per-page progress, and the two-tier refusal ("lowQuality" = readable-poorly; "unsafe" = the rare
+  // internal-safety refusals SCAN_UNMAPPABLE_PII / SCAN_SELFVERIFY_FAILED).
+  const [scanPending, setScanPending] = useState(false);
+  const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
+  const [scanNotice, setScanNotice] = useState<null | "lowQuality" | "unsafe">(null);
   const [redacted, setRedacted] = useState<{ bytes: Uint8Array; name: string; mime: string } | null>(
     null,
   );
@@ -141,6 +153,40 @@ export function App() {
     }
   }, [input, busy, showResult]);
 
+  // The single OCR pass for a scanned PDF (Stage 5). Runs ONLY once NER is ready (names come from NER on
+  // the OCR text) so there is no wasted deterministic-only pass; per-page progress streams from the
+  // worker; the three refusal codes map to the two-tier notice; any failure pulls the download (never
+  // hand back a scan we could not fully redact + verify).
+  const runScanRedaction = useCallback(
+    async (name: string, buffer: ArrayBuffer, terms: readonly string[]) => {
+      setStatus("reading");
+      setScanNotice(null);
+      setFileError(false);
+      try {
+        const onProgress = Comlink.proxy((event: ScanProgress) => setScanProgress(event));
+        const { result, bytes } = await getEngine().redactFile(name, buffer, terms, true, onProgress);
+        showResult(result);
+        if (bytes) {
+          setRedacted({ bytes, name: redactedName(name), mime: mimeFor(name) });
+        }
+      } catch (error) {
+        setRedacted(null);
+        const kind = scanNoticeFor(error instanceof Error ? error.message : "");
+        if (kind) {
+          setSource(null);
+          setScanNotice(kind);
+        } else {
+          setFileError(true);
+        }
+      } finally {
+        setScanPending(false);
+        setScanProgress(null);
+        setStatus(null);
+      }
+    },
+    [showResult],
+  );
+
   const onFile = useCallback(
     async (file: File | undefined) => {
       if (!file || busy) {
@@ -151,10 +197,28 @@ export function App() {
       setScannedNotice(false);
       setFormulaNotice(false);
       setSelfVerifyNotice(false);
+      setScanNotice(null);
+      setScanPending(false);
       setManualTerms([]);
       try {
         const buffer = await file.arrayBuffer();
         setSource({ kind: "file", name: file.name, buffer });
+        // Scan route (flag-gated): a scanned PDF is OCR-redacted, but only after NER is ready (H3 — a
+        // name-bearing doc is never redacted/downloadable name-unredacted). Defer to the NER-ready effect
+        // when the model is still loading; run immediately if it is already ready.
+        if (isScanOcrEnabled() && file.name.toLowerCase().endsWith(".pdf")) {
+          const kind = await getEngine().classifyPdf(buffer);
+          if (kind === "scan") {
+            if (ner.status === "ready") {
+              await runScanRedaction(file.name, buffer, []);
+            } else {
+              setScanPending(true);
+              void loadNer();
+              setStatus(null);
+            }
+            return;
+          }
+        }
         const { result: anonymized, bytes } = await getEngine().redactFile(file.name, buffer, []);
         showResult(anonymized);
         if (bytes) {
@@ -182,7 +246,7 @@ export function App() {
         setStatus(null);
       }
     },
-    [busy, showResult],
+    [busy, showResult, ner.status, runScanRedaction],
   );
 
   // When the model finishes loading, re-run whatever is on screen so names get redacted too.
@@ -191,6 +255,11 @@ export function App() {
     const wasReady = previousNerStatus.current === "ready";
     previousNerStatus.current = ner.status;
     if (ner.status !== "ready" || wasReady || source === null) {
+      return;
+    }
+    // A scan deferred until the model was ready: run its single OCR pass now (not the text/office upgrade).
+    if (scanPending && source.kind === "file") {
+      void runScanRedaction(source.name, source.buffer, manualTerms);
       return;
     }
     let cancelled = false;
@@ -228,7 +297,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [ner.status, source, showResult, manualTerms]);
+  }, [ner.status, source, showResult, manualTerms, scanPending, runScanRedaction]);
 
   // Re-run the current source with a new set of manual terms (add/remove a hand-picked redaction).
   const reprocessManual = useCallback(
@@ -563,6 +632,41 @@ export function App() {
               role="alert"
             >
               {t("input.selfVerifyFailed")}
+            </div>
+          )}
+          {scanNotice && (
+            <div
+              className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-800"
+              role="alert"
+            >
+              {scanNotice === "lowQuality" ? t("input.scanLowQuality") : t("input.scanUnsafe")}
+            </div>
+          )}
+          {scanProgress && (
+            <div className="mt-3 rounded-2xl border border-hairline bg-surface px-4 py-3" aria-live="polite">
+              <div className="flex items-center gap-2 text-xs text-zinc-600">
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-hairline border-t-ink" aria-hidden />
+                <span>
+                  {scanProgress.phase === "verifying"
+                    ? t("input.scanVerifying", { page: scanProgress.page ?? 1, total: scanProgress.total ?? 1 })
+                    : t("input.scanReading", { page: scanProgress.page ?? 1, total: scanProgress.total ?? 1 })}
+                </span>
+              </div>
+            </div>
+          )}
+          {scanPending && ner.status === "error" && (
+            <div
+              className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-800"
+              role="alert"
+            >
+              <span>{t("input.scanNamesBlocked")}</span>
+              <button
+                type="button"
+                onClick={onRetryNer}
+                className="shrink-0 rounded-full border border-amber-300 px-3 py-1 text-xs font-medium hover:bg-amber-100"
+              >
+                {t("result.retryNames")}
+              </button>
             </div>
           )}
           {ner.status === "loading" && (
