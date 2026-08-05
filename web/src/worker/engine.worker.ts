@@ -25,7 +25,11 @@ import type { HebrewNer } from "@engine/ner";
 import { redactFile, type FileRedaction } from "./officeRedact";
 import { restoreFile, type RestoredFile } from "./restoreFile";
 import { buildTokenDocx } from "./textDocx";
-import { installWorkerNetworkMonitor, onWorkerNetwork } from "./workerNetworkMonitor";
+import {
+  installWorkerNetworkMonitor,
+  onWorkerNetwork,
+  type WorkerNetworkReport,
+} from "./workerNetworkMonitor";
 
 // Patch the worker's fetch at module-eval, well before any loadNer() call reaches the network.
 installWorkerNetworkMonitor();
@@ -54,7 +58,7 @@ async function anonymizeSmart(text: string, manualTerms: readonly string[] = [])
 
 const api = {
   /** Register the main thread's network listener (Comlink-proxied). See workerNetworkMonitor. */
-  onNetwork(callback: (count: number) => void): void {
+  onNetwork(callback: (report: WorkerNetworkReport) => void): void {
     onWorkerNetwork(callback);
   },
 

@@ -17,9 +17,19 @@ export interface NerState {
   readonly progress: number;
   /** How many network requests the worker made to download the model (one-time, expected). */
   readonly modelRequests: number;
+  /** Worker requests to an UNEXPECTED host (should be 0; the badge alarms if not). */
+  readonly unexpectedRequests: number;
+  /** The first unexpected worker host, for the badge to name it. */
+  readonly unexpectedHost: string | null;
 }
 
-let state: NerState = { status: "idle", progress: 0, modelRequests: 0 };
+let state: NerState = {
+  status: "idle",
+  progress: 0,
+  modelRequests: 0,
+  unexpectedRequests: 0,
+  unexpectedHost: null,
+};
 const listeners = new Set<() => void>();
 
 function setState(patch: Partial<NerState>): void {
@@ -37,8 +47,12 @@ async function registerNetwork(): Promise<void> {
   }
   networkRegistered = true;
   await getEngine().onNetwork(
-    Comlink.proxy((count: number) => {
-      setState({ modelRequests: count });
+    Comlink.proxy((report: { ok: number; unexpected: number; unexpectedHost: string | null }) => {
+      setState({
+        modelRequests: report.ok,
+        unexpectedRequests: report.unexpected,
+        unexpectedHost: report.unexpectedHost,
+      });
     }),
   );
 }

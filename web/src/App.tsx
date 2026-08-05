@@ -10,7 +10,7 @@ import {
   type EncryptedKeyFile,
 } from "@engine/keyCrypto";
 import { getEngine } from "./worker/engineClient";
-import { useNetworkCount } from "./lib/useNetworkCount";
+import { useNetwork } from "./lib/useNetworkCount";
 import { mimeFor } from "./lib/mime";
 import { loadNer, useNer } from "./worker/nerController";
 
@@ -78,7 +78,7 @@ function highlight(text: string): ReactNode[] {
 
 export function App() {
   const { t } = useTranslation();
-  const networkCount = useNetworkCount();
+  const net = useNetwork();
   const ner = useNer();
 
   const [input, setInput] = useState("");
@@ -444,16 +444,36 @@ export function App() {
         <span className="text-[19px] font-semibold tracking-tight" dir="ltr">
           Mechikon
         </span>
-        <span className="inline-flex items-center gap-1.5 text-xs text-zinc-400" aria-live="polite">
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${networkCount === 0 ? "bg-emerald-500" : "bg-amber-500"}`}
-            aria-hidden="true"
-          />
-          {t("trust.badge.count", { count: networkCount })}
-          {ner.modelRequests > 0 && (
-            <span className="text-zinc-300">· {t("trust.badge.model", { count: ner.modelRequests })}</span>
-          )}
-        </span>
+        {(() => {
+          // The badge proves DESTINATION, not just count: a request to any host that is not same-origin
+          // or a model host is an exfiltration signal → red alarm naming the host. Otherwise emerald
+          // (0 main requests) or amber (some benign main request), plus the one-time model count.
+          const unexpected = net.unexpected + ner.unexpectedRequests;
+          const unexpectedHost = net.unexpectedHost ?? ner.unexpectedHost;
+          const dotColor = unexpected > 0 ? "bg-red-500" : net.count === 0 ? "bg-emerald-500" : "bg-amber-500";
+          return (
+            <span
+              className={`inline-flex items-center gap-1.5 text-xs ${unexpected > 0 ? "text-red-600" : "text-zinc-400"}`}
+              aria-live="polite"
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} aria-hidden="true" />
+              {unexpected > 0 ? (
+                <span className="font-medium">
+                  {t("trust.badge.unexpected", { host: unexpectedHost ?? "?" })}
+                </span>
+              ) : (
+                <>
+                  {t("trust.badge.count", { count: net.count })}
+                  {ner.modelRequests > 0 && (
+                    <span className="text-zinc-300">
+                      · {t("trust.badge.model", { count: ner.modelRequests })}
+                    </span>
+                  )}
+                </>
+              )}
+            </span>
+          );
+        })()}
       </header>
 
       <main className="mx-auto max-w-2xl px-6">
