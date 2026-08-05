@@ -84,4 +84,26 @@ describe("redactXlsx", () => {
     const logo = await out.file("xl/media/image1.png")!.async("uint8array");
     expect(Array.from(logo)).toEqual(Array.from(LOGO_BYTES));
   });
+
+  it("redacts INLINE worksheet strings, not only the shared-string table (no silent leak)", async () => {
+    // Some generators write cell text inline (<c t="inlineStr"><is><t>) instead of the shared table.
+    const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1" t="inlineStr"><is><t>מספר זהות 123456709</t></is></c></row>
+  </sheetData>
+</worksheet>`;
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", "<Types/>");
+    zip.file("xl/worksheets/sheet1.xml", sheet);
+    const buffer = await zip.generateAsync({ type: "arraybuffer" });
+
+    const { bytes, result } = await redactXlsx(buffer);
+    const out = await JSZip.loadAsync(bytes);
+    const rewritten = await out.file("xl/worksheets/sheet1.xml")!.async("string");
+
+    expect(rewritten).toContain("[ת״ז_1]");
+    expect(rewritten).not.toContain("123456709");
+    expect(result.key.length).toBe(1);
+  });
 });

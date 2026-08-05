@@ -9,9 +9,10 @@
  * ([שם_1] …) and the restore key are coherent across body, headers and footers. Values split across
  * several runs (Word does this constantly) are handled by the overlay char-walk.
  *
- * Limitations (documented, not hidden): xlsx numbers stored as numeric cells (not shared strings) are
- * not yet redacted here; rich-text run splits inside a cell are handled, inline sheet strings are not.
- * These are follow-ups — see docs/tasks.md.
+ * Limitations (documented, not hidden): xlsx numbers stored as numeric cells (`<v>`, not text) are not
+ * yet redacted here; rich-text run splits inside a cell are handled. Inline sheet strings ARE now
+ * handled (both the shared-string table and worksheet inline strings are processed). Numeric cells
+ * remain a follow-up — see docs/tasks.md.
  */
 import type { AnonymizeResult } from "@engine/types";
 import { anonymizeDeterministic } from "@engine/pipeline";
@@ -123,9 +124,8 @@ function countBefore(starts: readonly number[], pos: number): number {
  * strings plus the AnonymizeResult (for the UI chips + restore key).
  */
 async function redactParts(
-  parts: ReadonlyArray<{ path: string; content: string }>,
+  parts: ReadonlyArray<{ path: string; content: string; groupTag: string }>,
   tag: string,
-  groupTag: string,
   anonymize: Anonymize,
 ): Promise<{ updated: Map<string, string>; result: AnonymizeResult }> {
   const allNodes: TextNode[] = [];
@@ -134,7 +134,7 @@ async function redactParts(
   let previousGroup: string | null = null;
 
   parts.forEach((part, order) => {
-    const { nodes, decoded } = collectNodes(part.content, part.path, order, tag, groupTag);
+    const { nodes, decoded } = collectNodes(part.content, part.path, order, tag, part.groupTag);
     nodes.forEach((node, i) => {
       if (previousGroup !== null && node.group !== previousGroup) {
         concat += "\n";
@@ -183,7 +183,7 @@ async function redactOffice(
   matchPart: (name: string) => boolean,
   order: (name: string) => number,
   tag: string,
-  groupTag: string,
+  groupTagFor: (name: string) => string,
   anonymize: Anonymize,
 ): Promise<RedactedFile> {
   const zip = await loadZip(buffer);
@@ -191,9 +191,13 @@ async function redactOffice(
     .filter((name) => !zip.files[name].dir && matchPart(name))
     .sort((a, b) => order(a) - order(b));
   const parts = await Promise.all(
-    paths.map(async (path) => ({ path, content: await zip.files[path].async("string") })),
+    paths.map(async (path) => ({
+      path,
+      content: await zip.files[path].async("string"),
+      groupTag: groupTagFor(path),
+    })),
   );
-  const { updated, result } = await redactParts(parts, tag, groupTag, anonymize);
+  const { updated, result } = await redactParts(parts, tag, anonymize);
   for (const [path, content] of updated) {
     zip.file(path, content);
   }
@@ -216,12 +220,29 @@ function numberIn(name: string): number {
 
 /** Redact a .docx by overlaying placeholders onto its `<w:t>` runs, preserving everything else. */
 export function redactDocx(buffer: ArrayBuffer, anonymize: Anonymize = anonymizeDeterministic): Promise<RedactedFile> {
-  return redactOffice(buffer, (name) => DOCX_PART.test(name), docxOrder, "w:t", "w:p", anonymize);
+  return redactOffice(buffer, (name) => DOCX_PART.test(name), docxOrder, "w:t", () => "w:p", anonymize);
 }
 
-/** Redact a .xlsx by overlaying placeholders onto its shared-string `<t>` nodes. */
+/** A worksheet part (holds inline strings when a file doesn't use the shared-string table). */
+const XLSX_SHEET = /^xl\/worksheets\/sheet\d+\.xml$/;
+
+/**
+ * Redact a .xlsx by overlaying placeholders onto its text `<t>` nodes. Excel/Sheets store cell text in
+ * the shared-string table (`xl/sharedStrings.xml`, `<si><t>`), but some generators write INLINE strings
+ * straight into the worksheet (`<c t="inlineStr"><is><t>`). Both live in `<t>` elements, so we process
+ * the shared-string table AND every worksheet — otherwise an inline-string file would slip through
+ * unredacted (a silent leak). The `t="inlineStr"` attribute is not matched (`<t\b` needs `<t`, not
+ * `<c t=`). Numeric cells (`<v>`) are still out of scope — a documented follow-up.
+ */
 export function redactXlsx(buffer: ArrayBuffer, anonymize: Anonymize = anonymizeDeterministic): Promise<RedactedFile> {
-  return redactOffice(buffer, (name) => name === "xl/sharedStrings.xml", () => 0, "t", "si", anonymize);
+  return redactOffice(
+    buffer,
+    (name) => name === "xl/sharedStrings.xml" || XLSX_SHEET.test(name),
+    (name) => (name === "xl/sharedStrings.xml" ? 0 : 1 + numberIn(name)),
+    "t",
+    (name) => (name === "xl/sharedStrings.xml" ? "si" : "c"),
+    anonymize,
+  );
 }
 
 /** Anonymize a plain-text buffer and return it as bytes (txt / csv — no formatting to preserve). */
