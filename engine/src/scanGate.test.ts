@@ -1,7 +1,9 @@
 /**
- * Scan-quality gate — the sole defense against silently-dropped OCR PII. These tests pin the
- * whole-page quality bar: both signals (page-mean confidence AND low-confidence-word ratio) must pass,
- * an unreadable page is refused, whitespace never skews the numbers, and the bounds are inclusive.
+ * Scan-quality gate — one layer of the OCR track's defense-in-depth (NOT the sole guarantee; confident
+ * misreads are handled at the content layer — see docs/ocr-calibration.md). These tests pin the
+ * Stage-1-calibrated whole-page bar: lowRatio is the primary separator (MAX 0.12), meanConf is a weak
+ * backstop (FLOOR 75), an unreadable page is refused, whitespace never skews the numbers, and the
+ * bounds are inclusive.
  */
 import { describe, expect, it } from "vitest";
 import { evaluateScanQuality, SCAN_LOW_CONFIDENCE } from "./scanGate";
@@ -17,35 +19,49 @@ function page(words: OcrWord[]): OcrPageResult {
 }
 
 describe("evaluateScanQuality", () => {
-  it("1. passes a clean page (all words high, mean 91)", () => {
+  it("1. passes a clean page (all words high, mean 91, lowRatio 0)", () => {
     expect(evaluateScanQuality(page([word(91), word(91), word(91)])).ok).toBe(true);
   });
 
-  it("2. refuses the spike's noisy value (mean 89, below the floor)", () => {
-    const result = evaluateScanQuality(page([word(89), word(89), word(89)]));
+  it("2. accepts the corpus clean-max lowRatio (.091) — must not false-refuse a clean scan", () => {
+    // 1 low(<60) of 11 → ratio 0.0909 (<= 0.12), mean ~91 (>= 75). This is the observed clean-max; the
+    // MAX threshold is set with headroom above it precisely so real clean scans pass.
+    const words = [...Array(10).fill(word(95)), word(55)];
+    expect(evaluateScanQuality(page(words)).ok).toBe(true);
+  });
+
+  it("3. refuses the corpus fail-min lowRatio (.167) even when the mean passes", () => {
+    // 5 low(<60) of 30 → ratio 0.1667 (> 0.12); mean 88.3 (>= 75). lowRatio fires alone — this is where
+    // real recall failures begin, so the gate must refuse.
+    const words = [...Array(25).fill(word(95)), ...Array(5).fill(word(55))];
+    const result = evaluateScanQuality(page(words));
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.reason).toBe(SCAN_LOW_CONFIDENCE);
   });
 
-  it("3. refuses on the low-confidence-word ratio even when the mean passes", () => {
-    // 16 high + 4 low(<60): mean 91 (>= floor), lowRatio 0.2 (> 0.15) → the second signal fires alone.
-    const words = [...Array(16).fill(word(100)), ...Array(4).fill(word(55))];
-    expect(evaluateScanQuality(page(words)).ok).toBe(false);
+  it("4. meanConf FLOOR (75) is the illegible-collapse backstop: mean < 75 refuses", () => {
+    // All words conf 70 → lowRatio 0 (70 >= LOW_CONF_WORD_FLOOR 60) so lowRatio passes; mean 70 < 75
+    // must still refuse. This isolates the meanConf backstop from lowRatio.
+    expect(evaluateScanQuality(page([word(70), word(70), word(70)])).ok).toBe(false);
+    // And a good-mean clean page above the floor passes (mean 79.4 was the lowest corpus pass).
+    expect(evaluateScanQuality(page([word(80), word(80), word(80)])).ok).toBe(true);
   });
 
-  it("4. refuses an unreadable page (no text words)", () => {
+  it("5. lowRatio boundary is inclusive at exactly 0.12 and refuses just above", () => {
+    const highs = (n: number) => Array(n).fill(word(95));
+    const lows = (n: number) => Array(n).fill(word(55));
+    // 12 low of 100 → ratio exactly 0.12 → accept (inclusive <=); mean 90.2 >= 75.
+    expect(evaluateScanQuality(page([...highs(88), ...lows(12)])).ok).toBe(true);
+    // 13 low of 100 → ratio 0.13 → refuse.
+    expect(evaluateScanQuality(page([...highs(87), ...lows(13)])).ok).toBe(false);
+  });
+
+  it("6. refuses an unreadable page (no text words)", () => {
     expect(evaluateScanQuality(page([])).ok).toBe(false);
     expect(evaluateScanQuality(page([word(99, "   ")])).ok).toBe(false);
   });
 
-  it("5. accepts the exact inclusive boundary (mean = floor, ratio = max)", () => {
-    // 3 low(58) of 20 → ratio exactly 0.15; high words tuned so the mean is exactly 90.
-    const highConf = (90 * 20 - 3 * 58) / 17;
-    const words = [...Array(3).fill(word(58)), ...Array(17).fill(word(highConf))];
-    expect(evaluateScanQuality(page(words)).ok).toBe(true);
-  });
-
-  it("6. excludes whitespace-only words from the mean and ratio", () => {
+  it("7. excludes whitespace-only words from the mean and ratio", () => {
     // Three real high words (mean 95) plus whitespace tokens with junk confidence that would sink a
     // naive average — the gate must ignore them and pass.
     const words = [word(95), word(95), word(95), word(1, " "), word(1, "\t")];
