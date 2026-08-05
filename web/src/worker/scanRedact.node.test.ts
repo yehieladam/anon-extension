@@ -127,6 +127,19 @@ run("scan redaction reality — real image-only scan", () => {
     await expect(selfVerifyScan(bytes, nodeOcr, fullDetect, [0])).resolves.toBeUndefined();
   }, 300_000);
 
+  it("full redactScan THROWS to the caller on an execution fault (mislocated rects)", async () => {
+    // R5 (seam propagation): a detect that correctly finds the PII but returns boxes at the WRONG pixel
+    // location (simulating a coordinate-mapping bug) whites empty corners; the real PII survives; the
+    // INTERNAL self-verify re-detects it and the throw must propagate OUT of redactScan to the caller.
+    const mupdf: any = await import("mupdf");
+    const scan = scanPdfFromPixmap(mupdf, rasterPixmap(mupdf, SOURCE, 200), 200);
+    const mislocated: ScanDetect = async (page) => {
+      const d = await detectScanPii(page, anonymizeDeterministic);
+      return { boxes: d.boxes.map(() => ({ x0: 0, y0: 0, x1: 1, y1: 1 })), result: d.result };
+    };
+    await expect(redactScan(scan, anonymizeDeterministic, nodeOcr, mislocated)).rejects.toThrow(SCAN_SELFVERIFY_FAILED);
+  }, 300_000);
+
   it("label-anchor specifically removes real ID pixels (digit detectors bypassed)", async () => {
     // Closes the composition seam in the #11 split: prove a LABEL-ANCHOR bbox lands on and removes real
     // pixels (not just that it detects, and not via the digit detector). Inject a detect that runs ONLY
