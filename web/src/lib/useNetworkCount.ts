@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
-import { getNetworkCount, subscribeNetwork } from "./networkMonitor";
+import { getNetworkState, subscribeNetwork, type NetworkState } from "./networkMonitor";
 
-/** Live count of script-initiated network requests on this page (drives the trust badge). */
-export function useNetworkCount(): number {
-  return useSyncExternalStore(subscribeNetwork, getNetworkCount, getNetworkCount);
+/** Live main-thread network observation (count + off-policy destinations) for the trust badge. */
+export function useNetwork(): NetworkState {
+  return useSyncExternalStore(subscribeNetwork, getNetworkState, getNetworkState);
 }
