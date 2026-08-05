@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 import { restore } from "@engine/restore";
 import { redactDocx, redactXlsx, XLSX_FORMULA_PII, OFFICE_SELFVERIFY_FAILED } from "./officeRedact";
+import { restoreFile } from "./restoreFile";
 
 /** Wrap worksheet rows in a valid sheet part; optionally add a shared-string table. */
 async function buildXlsxWith(sheetInner: string, sharedStrings?: string): Promise<ArrayBuffer> {
@@ -132,14 +133,12 @@ describe("redactOffice — self-verify (fail closed)", () => {
 </w:document>`;
 
   it("6. refuses when a detected value also survives in a part the redactor never rewrites", async () => {
-    // Same ID in the body (detected → in the key) AND in docProps/core.xml (not a redacted part).
+    // Same ID in the body (detected → in the key) AND in word/settings.xml (neither redacted nor
+    // sanitized — a genuinely unhandled channel, so the backstop must fire).
     const zip = new JSZip();
     zip.file("[Content_Types].xml", "<Types/>");
     zip.file("word/document.xml", BODY_DOC("לקוח 123456709"));
-    zip.file(
-      "docProps/core.xml",
-      `<?xml version="1.0"?><cp:coreProperties xmlns:cp="a" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:creator>123456709</dc:creator></cp:coreProperties>`,
-    );
+    zip.file("word/settings.xml", `<w:settings xmlns:w="w"><w:note>123456709</w:note></w:settings>`);
     const buffer = await zip.generateAsync({ type: "arraybuffer" });
     await expect(redactDocx(buffer)).rejects.toThrow(OFFICE_SELFVERIFY_FAILED);
   });
@@ -159,6 +158,68 @@ describe("redactOffice — self-verify (fail closed)", () => {
         expect(content).not.toContain("1234567");
       }
     }
+  });
+});
+
+describe("redactOffice — metadata strip + comment routing (2b)", () => {
+  const DOC = (text: string) => `<?xml version="1.0"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p></w:body></w:document>`;
+
+  it("7. routes docx comment body text through the key, coherent with the document body", async () => {
+    const comments = `<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="1" w:author="יעל"><w:p><w:r><w:t xml:space="preserve">לגבי 123456709</w:t></w:r></w:p></w:comment></w:comments>`;
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", "<Types/>");
+    zip.file("word/document.xml", DOC("לקוח 123456709"));
+    zip.file("word/comments.xml", comments);
+    const { bytes, result } = await redactDocx(await zip.generateAsync({ type: "arraybuffer" }));
+
+    // One value, one key row — coherent across body and comment.
+    expect(result.key.filter((r) => r.original === "123456709")).toHaveLength(1);
+    const out = await JSZip.loadAsync(bytes);
+    expect(await out.file("word/comments.xml")!.async("string")).toContain("[ת״ז_1]");
+    expect(await out.file("word/comments.xml")!.async("string")).toContain('w:author=""');
+
+    // Restore brings both occurrences (body + comment) back.
+    const restored = await restoreFile("d.docx", bytes.buffer.slice(0) as ArrayBuffer, result.key);
+    const rdoc = await JSZip.loadAsync(restored.bytes);
+    expect(await rdoc.file("word/document.xml")!.async("string")).toContain("123456709");
+    expect(await rdoc.file("word/comments.xml")!.async("string")).toContain("123456709");
+  });
+
+  it("8. routes xlsx legacy comment text through the key", async () => {
+    const comments = `<comments><authors><author>משה</author></authors><commentList><comment ref="A1" authorId="0"><text><r><t>מספר 123456709</t></r></text></comment></commentList></comments>`;
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", "<Types/>");
+    zip.file("xl/worksheets/sheet1.xml", `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`);
+    zip.file("xl/comments1.xml", comments);
+    const { bytes } = await redactXlsx(await zip.generateAsync({ type: "arraybuffer" }));
+    const out = await JSZip.loadAsync(bytes);
+    const commentsOut = await out.file("xl/comments1.xml")!.async("string");
+    expect(commentsOut).toContain("[ת״ז_1]");
+    expect(commentsOut).not.toContain("123456709");
+    expect(commentsOut).toContain("<author></author>"); // author blanked
+  });
+
+  it("9. the previously-refused file now downloads clean (metadata blanked before the backstop)", async () => {
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", "<Types/>");
+    zip.file("word/document.xml", DOC("לקוח 123456709"));
+    zip.file("docProps/core.xml", `<cp:coreProperties xmlns:cp="c" xmlns:dc="d"><dc:creator>123456709</dc:creator></cp:coreProperties>`);
+    // Was throwing OFFICE_SELFVERIFY_FAILED in 2a; now returns bytes.
+    const { bytes } = await redactDocx(await zip.generateAsync({ type: "arraybuffer" }));
+    const core = await (await JSZip.loadAsync(bytes)).file("docProps/core.xml")!.async("string");
+    expect(core).toContain("<dc:creator></dc:creator>");
+    expect(core).not.toContain("123456709");
+  });
+
+  it("10. still fails closed for a value surviving in a genuinely unhandled part", async () => {
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", "<Types/>");
+    zip.file("word/document.xml", DOC("לקוח 123456709"));
+    zip.file("customXml/item1.xml", `<root>123456709</root>`); // neither redacted nor sanitized
+    await expect(redactDocx(await zip.generateAsync({ type: "arraybuffer" }))).rejects.toThrow(
+      OFFICE_SELFVERIFY_FAILED,
+    );
   });
 });
 
