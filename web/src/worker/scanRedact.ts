@@ -28,6 +28,9 @@ import type { RedactedFile, Anonymize } from "./officeRedact";
 export { SCAN_LOW_CONFIDENCE } from "@engine/scanGate";
 export { SCAN_UNMAPPABLE_PII } from "@engine/detectScanPii";
 
+/** Thrown when the redacted OUTPUT still trips our own detection on re-OCR — the fixed-point failure. */
+export const SCAN_SELFVERIFY_FAILED = "SCAN_SELFVERIFY_FAILED";
+
 /** Injected OCR primitive: a rendered scan-page PNG -> words+bboxes. Browser=ocr.ts, node test=tesseract. */
 export type ScanOcr = (png: Uint8Array) => Promise<OcrPageResult>;
 
@@ -59,6 +62,7 @@ export async function redactScan(
   const scale = OCR_RENDER_DPI / 72;
   const keyRows: KeyRow[] = [];
 
+  const redactedPages: number[] = []; // pages that actually got >=1 rect — the only ones worth re-verifying
   const pageCount: number = doc.countPages();
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
     const page = doc.loadPage(pageIndex);
@@ -94,16 +98,57 @@ export async function redactScan(
     }
     if (touched) {
       page.applyRedactions(true, PDFPage.REDACT_IMAGE_PIXELS, PDFPage.REDACT_LINE_ART_NONE, PDFPage.REDACT_TEXT_REMOVE);
+      redactedPages.push(pageIndex);
     }
   }
 
   // Strip the invisible metadata leak channels (Info, XMP, embedded files, annotation text).
   sanitizeMetadata(doc);
 
-  // Copy out of WASM memory before returning (asUint8Array is a live view).
+  // Copy out of WASM memory before self-verify re-opens mupdf (asUint8Array is a live view).
   const bytes = new Uint8Array(doc.saveToBuffer(SAFE_SAVE_OPTIONS).asUint8Array());
-  // Stage-4 seam: re-OCR self-verify of `bytes` (re-detect the output, assert no PII) lands next.
+  // Fixed-point self-verify: re-detect the OUTPUT and require it to find nothing (Stage 4).
+  await selfVerifyScan(bytes, ocr, detect, redactedPages);
   const result: AnonymizeResult = { anonymizedText: "", spans: [], key: keyRows };
   return { bytes, result };
+}
+
+/**
+ * Fixed-point self-verify (OCR Stage 4): re-open the redacted OUTPUT, and on every page that actually
+ * received a redaction, re-rasterize -> OCR -> run detection again; the output is clean ONLY if detection
+ * now finds NOTHING (zero boxes). A surviving box means either a rect that failed to cover a PII (an
+ * execution failure) or a PII-shaped token the second OCR pass revealed (a real under-detection) — BOTH
+ * must refuse. This is stricter than needle-matching and self-consistent: the output is judged clean by
+ * the exact standard we redact with. Redaction is a fixed point because every mechanism whites the whole
+ * PII region (label-anchor includes the label word, so a lone label cannot re-anchor). Zero-rect pages
+ * are skipped — there is nothing executed to validate, and their re-OCR is the same pass-1 OCR the gate
+ * already vetted. Any survivor throws SCAN_SELFVERIFY_FAILED (whole-file refuse).
+ */
+export async function selfVerifyScan(
+  bytes: Uint8Array,
+  ocr: ScanOcr,
+  detect: ScanDetect,
+  redactedPages: readonly number[],
+): Promise<void> {
+  if (redactedPages.length === 0) {
+    return;
+  }
+  const mupdf: any = await import("mupdf");
+  const doc = mupdf.PDFDocument.openDocument(bytes, "application/pdf");
+  const scale = OCR_RENDER_DPI / 72;
+  for (const pageIndex of redactedPages) {
+    const pixmap = doc.loadPage(pageIndex).toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false);
+    const ocrPage = await ocr(new Uint8Array(pixmap.asPNG()));
+    let boxCount: number;
+    try {
+      boxCount = (await detect(ocrPage)).boxes.length;
+    } catch {
+      // detect threw (e.g. SCAN_UNMAPPABLE_PII) — a PII was detected on the output → not clean.
+      throw new Error(SCAN_SELFVERIFY_FAILED);
+    }
+    if (boxCount > 0) {
+      throw new Error(SCAN_SELFVERIFY_FAILED);
+    }
+  }
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */

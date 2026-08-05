@@ -15,9 +15,11 @@ import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { anonymizeDeterministic } from "@engine/pipeline";
-import { labelAnchorBoxes } from "@engine/detectScanPii";
+import { labelAnchorBoxes, detectScanPii } from "@engine/detectScanPii";
 import type { OcrPageResult, OcrWord } from "@engine/ocrTypes";
-import { redactScan, SCAN_LOW_CONFIDENCE, type ScanDetect } from "./scanRedact";
+import { redactScan, selfVerifyScan, SCAN_LOW_CONFIDENCE, SCAN_SELFVERIFY_FAILED, type ScanDetect } from "./scanRedact";
+
+const fullDetect: ScanDetect = (page) => detectScanPii(page, anonymizeDeterministic);
 
 const run = process.env.RUN_OCR ? describe : describe.skip;
 
@@ -103,6 +105,39 @@ run("scan redaction reality — real image-only scan", () => {
     const text = reText.replace(/\s/g, "");
     expect(text).not.toContain("123456709"); // ID gone (deterministic A + digit-relax B both covered it)
     expect(text).not.toContain("0521234567"); // phone digits gone (self-heal: bbox pixels removed)
+    // R1/R3/R4: redactScan resolving means its internal fixed-point self-verify PASSED — despite the
+    // fixture's labels (label-anchor whites label+value, so no lone label re-anchors) and digit runs
+    // (B whites them). No false refuse from over-redaction idempotency.
+  }, 300_000);
+
+  it("self-verify THROWS when a PII survives in the output (fixed-point, the headline)", async () => {
+    // R2: run selfVerifyScan against an UN-redacted scan (the ID is fully legible) with a real detector
+    // and page 0 marked redacted — the surviving ID must be re-detected -> SCAN_SELFVERIFY_FAILED. Proves
+    // the verify actually catches a leak, not merely passes a clean file.
+    const mupdf: any = await import("mupdf");
+    const scan = scanPdfFromPixmap(mupdf, rasterPixmap(mupdf, SOURCE, 200), 200);
+    await expect(selfVerifyScan(new Uint8Array(scan), nodeOcr, fullDetect, [0])).rejects.toThrow(SCAN_SELFVERIFY_FAILED);
+  }, 300_000);
+
+  it("self-verify PASSES on the redacted output (fixed point reached)", async () => {
+    // R1 explicit: the redacted output re-detects to zero boxes.
+    const mupdf: any = await import("mupdf");
+    const scan = scanPdfFromPixmap(mupdf, rasterPixmap(mupdf, SOURCE, 200), 200);
+    const { bytes } = await redactScan(scan, anonymizeDeterministic, nodeOcr, fullDetect);
+    await expect(selfVerifyScan(bytes, nodeOcr, fullDetect, [0])).resolves.toBeUndefined();
+  }, 300_000);
+
+  it("full redactScan THROWS to the caller on an execution fault (mislocated rects)", async () => {
+    // R5 (seam propagation): a detect that correctly finds the PII but returns boxes at the WRONG pixel
+    // location (simulating a coordinate-mapping bug) whites empty corners; the real PII survives; the
+    // INTERNAL self-verify re-detects it and the throw must propagate OUT of redactScan to the caller.
+    const mupdf: any = await import("mupdf");
+    const scan = scanPdfFromPixmap(mupdf, rasterPixmap(mupdf, SOURCE, 200), 200);
+    const mislocated: ScanDetect = async (page) => {
+      const d = await detectScanPii(page, anonymizeDeterministic);
+      return { boxes: d.boxes.map(() => ({ x0: 0, y0: 0, x1: 1, y1: 1 })), result: d.result };
+    };
+    await expect(redactScan(scan, anonymizeDeterministic, nodeOcr, mislocated)).rejects.toThrow(SCAN_SELFVERIFY_FAILED);
   }, 300_000);
 
   it("label-anchor specifically removes real ID pixels (digit detectors bypassed)", async () => {

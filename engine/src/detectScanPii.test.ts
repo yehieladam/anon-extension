@@ -112,3 +112,16 @@ describe("detectScanPii — standard (A) + zero-cover refusal", () => {
     expect(boxes).toContainEqual({ x0: 0, y0: 0, x1: 150, y1: 20 });
   });
 });
+
+describe("detectScanPii — Stage-4 self-verify verdict basis", () => {
+  // Self-verify re-runs detectScanPii on the re-OCR and refuses on ANY box. These pin that verdict input.
+  it("P1. a clean (no-PII) page yields zero boxes (verify would PASS)", async () => {
+    const { boxes } = await detectScanPii(pageOf([w("סוף", 0, 60), w("המסמך", 70, 200)]), NOOP);
+    expect(boxes).toHaveLength(0);
+  });
+
+  it("P2. a residual valid ID re-detects to a box (verify would FAIL)", async () => {
+    const { boxes } = await detectScanPii(pageOf([w("123456709", 0, 180)]), anonymizeDeterministic);
+    expect(boxes.length).toBeGreaterThan(0);
+  });
+});
