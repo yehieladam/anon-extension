@@ -292,6 +292,19 @@ export function App() {
     downloadBlob(blob, redacted.name);
   }, [redacted]);
 
+  // A redacted PDF is a visual redaction with no tokens — offer a "Word for AI" export whose tokens an
+  // LLM can work with and that restores through the docx path. Only meaningful for a PDF source (docx
+  // and pasted text already carry tokens the user can use directly).
+  const onDownloadTokenDocx = useCallback(async () => {
+    if (!result || result.key.length === 0 || source?.kind !== "file") {
+      return;
+    }
+    const bytes = await getEngine().buildTokenDocx(result.anonymizedText);
+    const base = source.name.replace(/\.[^.]+$/, "");
+    const blob = new Blob([bytes as BlobPart], { type: MIME_BY_EXT.docx });
+    downloadBlob(blob, `${base}_לAI.docx`);
+  }, [result, source]);
+
   const onDownloadKey = useCallback(async () => {
     if (!result || result.key.length === 0) {
       return;
@@ -586,6 +599,18 @@ export function App() {
                       {t("result.download")}
                     </button>
                   ))}
+                {redacted &&
+                  source?.kind === "file" &&
+                  source.name.toLowerCase().endsWith(".pdf") &&
+                  ner.status !== "loading" && (
+                    <button
+                      type="button"
+                      onClick={onDownloadTokenDocx}
+                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-hairline px-4 text-[13px] font-medium text-ink transition hover:bg-surface"
+                    >
+                      {t("result.downloadTokenDocx")}
+                    </button>
+                  )}
                 {result.key.length > 0 && (
                   <button
                     type="button"
