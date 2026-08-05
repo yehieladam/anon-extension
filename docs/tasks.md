@@ -133,7 +133,7 @@ a blocker. The Mechikon build stays in THIS repo (open-source/AGPL), never merge
 
 - [x] **P2W-01** React + Vite web app shell (`web/`), imports `@engine/*` — SHELL DONE
   Owner: yehieladam
-  Scope: separate Vite build (`web/vite.config.ts`, `npm run build:web` → `dist-web`), own `web/vercel.json` + a dev/preview COOP/COEP plugin so the page is `crossOriginIsolated`; professional/legal RTL shell (hero, 4-step strip, input placeholder, trust strip, footer) with all strings via i18n; `@engine` alias reused. Build/typecheck/lint green.
+  Scope: separate Vite build (`web/vite.config.ts`, `npm run build:web` → `dist-web`), own `vercel.json` (repo root) + a dev/preview COOP/COEP plugin so the page is `crossOriginIsolated`; professional/legal RTL shell (hero, 4-step strip, input placeholder, trust strip, footer) with all strings via i18n; `@engine` alias reused. Build/typecheck/lint green.
   DoD (shell): ✅ `build:web` produces `dist-web`; ✅ COOP/COEP configured (dev + vercel.json). REMAINING (moves to P2W-02 + P0I-01): wire the actual detect→anonymize→restore flow through the Worker, then verify NER runs in-browser with no PII network calls.
 - [~] **P2W-02** Paste flow end-to-end: detect → highlight by type → anonymized copy → download key
   Owner: yehieladam
@@ -236,7 +236,7 @@ especially a risk-averse Israeli lawyer — can verify. This is the moat vs comp
 
 - [ ] **TR-01** Strict CSP: `connect-src` locked to only the model host; publicly documented
   Owner: yehieladam
-  Scope: browser-enforced boundary (not a code promise). **Web app CSP ADDED (code review 2026-08-04):** `web/vite.config.ts` (dev/preview) + `web/vercel.json` — `default-src 'self'`, `connect-src 'self'` + the HF model hosts, `object-src/base-uri/form-action` locked, `script-src 'self' 'wasm-unsafe-eval'`, `worker-src 'self' blob:`. **Tighten `connect-src` to `'self'` once the model self-hosts on R2 (P4-02).** Extension side already has its MV3 CSP.
+  Scope: browser-enforced boundary (not a code promise). **Web app CSP ADDED (code review 2026-08-04):** `web/vite.config.ts` (dev/preview) + `vercel.json` (repo root) — `default-src 'self'`, `connect-src 'self'` + the HF model hosts, `object-src/base-uri/form-action` locked, `script-src 'self' 'wasm-unsafe-eval'`, `worker-src 'self' blob:`. **Tighten `connect-src` to `'self'` once the model self-hosts on R2 (P4-02).** Extension side already has its MV3 CSP.
   DoD: CSP present and verified in both surfaces (web ✅, extension has MV3 CSP); a doc note explains what it blocks and why. Runtime-verify no request is blocked once the model flow lands.
 - [ ] **TR-02** Extension published with zero network/host permissions; surface it in the UI
   Owner: unassigned
