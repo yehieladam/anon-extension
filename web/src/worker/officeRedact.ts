@@ -21,7 +21,13 @@
 import type { AnonymizeResult, Span } from "@engine/types";
 import { anonymizeDeterministic, detectDeterministic } from "@engine/pipeline";
 import { applyOverlay, toReplacements, type Segment } from "@engine/overlay";
+import { decodeXml, encodeXml } from "@engine/xml";
+import { officeLeakScan } from "@engine/officeVerify";
+import { sanitizeOfficeMetadata } from "./officeSanitize";
 import { extractText } from "./extract";
+
+// Re-export so existing importers (restoreFile) keep working through this module.
+export { decodeXml, encodeXml } from "@engine/xml";
 
 /**
  * How to anonymize the document's text. Injected so the caller decides deterministic-only vs full
@@ -48,30 +54,8 @@ export interface FileRedaction {
 /** Thrown when an xlsx has PII in a FORMULA cell — refused rather than under-redacted (surfaced in UI). */
 export const XLSX_FORMULA_PII = "XLSX_FORMULA_PII";
 
-const NAMED_DECODE: ReadonlyArray<readonly [RegExp, string]> = [
-  [/&lt;/g, "<"],
-  [/&gt;/g, ">"],
-  [/&quot;/g, '"'],
-  [/&apos;/g, "'"],
-];
-
-/** Decode the XML entities that can appear inside a text node (named + numeric). `&amp;` last. */
-export function decodeXml(text: string): string {
-  let out = text;
-  for (const [pattern, replacement] of NAMED_DECODE) {
-    out = out.replace(pattern, replacement);
-  }
-  out = out.replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) =>
-    String.fromCodePoint(Number.parseInt(hex, 16)),
-  );
-  out = out.replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(Number.parseInt(dec, 10)));
-  return out.replace(/&amp;/g, "&");
-}
-
-/** Re-encode text for an XML text node. `&` first so we never double-escape. */
-export function encodeXml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+/** Thrown when an original PII value still appears in ANY text part of the output — refuse, never ship. */
+export const OFFICE_SELFVERIFY_FAILED = "OFFICE_SELFVERIFY_FAILED";
 
 /** A region of one XML part to rewrite in place. "text" = a text-node's inner; "numcell" = a whole `<c>`. */
 interface Edit {
@@ -260,8 +244,8 @@ async function redactParts(
   return { updated, result };
 }
 
-/** docx: body + headers + footers + notes, in reading order. */
-export const DOCX_PART = /^word\/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$/;
+/** docx: body + headers + footers + notes + comment bodies, in reading order. */
+export const DOCX_PART = /^word\/(document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/;
 
 async function loadZip(buffer: ArrayBuffer) {
   const JSZip = (await import("jszip")).default;
@@ -293,6 +277,28 @@ async function redactOffice(
   for (const [path, content] of updated) {
     zip.file(path, content);
   }
+
+  // Blank the metadata leak channels (author, company, custom DMS props, comment authors) BEFORE the
+  // self-verify, so a detected body name that also appears in metadata no longer trips the backstop.
+  await sanitizeOfficeMetadata(zip);
+
+  // Self-verify (fail closed): re-scan EVERY text part of the final zip — including parts the redactor
+  // never rewrote (docProps metadata, comments, settings) — and refuse if any original value survives.
+  // This is the office analogue of the PDF three-layer self-verify: the guarantee, not best-effort.
+  const scanMap = new Map<string, string>();
+  for (const name of Object.keys(zip.files)) {
+    if (!zip.files[name].dir && /\.(xml|rels)$/i.test(name)) {
+      scanMap.set(name, await zip.files[name].async("string"));
+    }
+  }
+  const scan = officeLeakScan(
+    scanMap,
+    result.key.map((row) => row.original),
+  );
+  if (!scan.pass) {
+    throw new Error(`${OFFICE_SELFVERIFY_FAILED}: ${scan.hits.join(", ")}`);
+  }
+
   const bytes = await zip.generateAsync({ type: "uint8array" });
   return { bytes, result };
 }
@@ -325,13 +331,15 @@ const XLSX_SHEET = /^xl\/worksheets\/sheet\d+\.xml$/;
  * company numbers are frequently stored as NUMBERS (`<c><v>…</v></c>`). All three are handled — see the
  * file header. The `t="inlineStr"` attribute is never mistaken for a `<t>` element (`<t\b` needs `<t`).
  */
+const XLSX_COMMENTS = /^xl\/comments\d*\.xml$/;
+
 export function redactXlsx(buffer: ArrayBuffer, anonymize: Anonymize = anonymizeDeterministic): Promise<RedactedFile> {
   return redactOffice(
     buffer,
-    (name) => name === "xl/sharedStrings.xml" || XLSX_SHEET.test(name),
-    (name) => (name === "xl/sharedStrings.xml" ? 0 : 1 + numberIn(name)),
+    (name) => name === "xl/sharedStrings.xml" || XLSX_SHEET.test(name) || XLSX_COMMENTS.test(name),
+    (name) => (name === "xl/sharedStrings.xml" ? 0 : XLSX_COMMENTS.test(name) ? 1000 + numberIn(name) : 1 + numberIn(name)),
     "t",
-    (name) => (name === "xl/sharedStrings.xml" ? "si" : "c"),
+    (name) => (name === "xl/sharedStrings.xml" ? "si" : XLSX_COMMENTS.test(name) ? "comment" : "c"),
     (name) => XLSX_SHEET.test(name),
     anonymize,
   );

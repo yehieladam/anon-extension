@@ -102,6 +102,7 @@ export function App() {
   const [fileError, setFileError] = useState(false);
   const [scannedNotice, setScannedNotice] = useState(false);
   const [formulaNotice, setFormulaNotice] = useState(false);
+  const [selfVerifyNotice, setSelfVerifyNotice] = useState(false);
   const [redacted, setRedacted] = useState<{ bytes: Uint8Array; name: string; mime: string } | null>(
     null,
   );
@@ -162,6 +163,7 @@ export function App() {
       setFileError(false);
       setScannedNotice(false);
       setFormulaNotice(false);
+      setSelfVerifyNotice(false);
       setManualTerms([]);
       try {
         const buffer = await file.arrayBuffer();
@@ -182,6 +184,10 @@ export function App() {
           // A number produced by a formula can't be safely overlaid (recalc regenerates it) — refuse.
           setSource(null);
           setFormulaNotice(true);
+        } else if (error instanceof Error && error.message.includes("OFFICE_SELFVERIFY_FAILED")) {
+          // A detected value still survived somewhere in the file — refuse rather than hand back a leak.
+          setSource(null);
+          setSelfVerifyNotice(true);
         } else {
           setFileError(true);
         }
@@ -535,6 +541,14 @@ export function App() {
               role="alert"
             >
               {t("input.formulaPii")}
+            </div>
+          )}
+          {selfVerifyNotice && (
+            <div
+              className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-800"
+              role="alert"
+            >
+              {t("input.selfVerifyFailed")}
             </div>
           )}
           {ner.status === "loading" && (
