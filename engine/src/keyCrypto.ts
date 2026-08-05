@@ -15,6 +15,30 @@ const ENC_VERSION = "mechikon-key-enc.v1";
 const KDF_ITERATIONS = 600_000;
 const SALT_BYTES = 16;
 const NONCE_BYTES = 12;
+/**
+ * A restore-key file is untrusted input (the user uploads it). Bound the PBKDF2 iteration count so a
+ * hostile file cannot pin the tab's CPU (a 2-billion-iteration derive would freeze it). We REJECT out
+ * of range rather than clamp-and-derive: our own files always carry exactly KDF_ITERATIONS (in range),
+ * and a hostile value is refused BEFORE deriveKey ever runs.
+ */
+const MIN_ITERATIONS = 100_000;
+const MAX_ITERATIONS = 10_000_000;
+
+/** Thrown when an uploaded key envelope is malformed or out of bounds (distinct from a wrong passphrase). */
+export const INVALID_KEY_FILE = "INVALID_KEY_FILE";
+
+function isValidIterations(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= MIN_ITERATIONS &&
+    value <= MAX_ITERATIONS
+  );
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
 
 export interface EncryptedKeyFile {
   readonly version: typeof ENC_VERSION;
@@ -90,9 +114,17 @@ export async function decryptKeyRows(
   envelope: EncryptedKeyFile,
   passphrase: string,
 ): Promise<KeyRow[]> {
+  // Validate the untrusted envelope BEFORE any key derivation — a hostile iteration count must never
+  // reach deriveKey (that is the freeze), and a malformed file is a clear, distinct error.
+  if (!isEncryptedKeyFile(envelope)) {
+    throw new Error(INVALID_KEY_FILE);
+  }
   const salt = fromBase64(envelope.kdf.salt);
   const nonce = fromBase64(envelope.nonce);
   const ciphertext = fromBase64(envelope.ciphertext);
+  if (salt.length !== SALT_BYTES || nonce.length !== NONCE_BYTES) {
+    throw new Error(INVALID_KEY_FILE);
+  }
   const aesKey = await deriveAesKey(passphrase, salt, envelope.kdf.iterations);
   let plaintext: ArrayBuffer;
   try {
@@ -108,11 +140,24 @@ export async function decryptKeyRows(
   return fromKeyFile(new TextDecoder().decode(plaintext));
 }
 
-/** Is this parsed JSON an encrypted key envelope (vs a plain key.v1 file)? */
+/**
+ * Is this parsed JSON a WELL-FORMED encrypted key envelope (vs a plain key.v1 file or hostile JSON)?
+ * A full structural guard: the version, the KDF block (algo + in-range iterations + salt), the nonce
+ * and the ciphertext must all be present and well-typed. This is the gate that keeps a malformed or
+ * DoS-crafted upload out of the crypto path.
+ */
 export function isEncryptedKeyFile(value: unknown): value is EncryptedKeyFile {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as { version?: unknown }).version === ENC_VERSION
-  );
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const env = value as Record<string, unknown>;
+  if (env.version !== ENC_VERSION || !isNonEmptyString(env.nonce) || !isNonEmptyString(env.ciphertext)) {
+    return false;
+  }
+  const kdf = env.kdf;
+  if (typeof kdf !== "object" || kdf === null) {
+    return false;
+  }
+  const k = kdf as Record<string, unknown>;
+  return k.algo === "PBKDF2-SHA256" && isValidIterations(k.iterations) && isNonEmptyString(k.salt);
 }
