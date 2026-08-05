@@ -294,6 +294,13 @@ export function App() {
     [manualTerms, reprocessManual],
   );
 
+  // Retry loading the names model after it failed — the block is environmental (fetch/WASM), not the
+  // file. On the resulting idle→loading→ready transition the re-run effect recomputes with names and
+  // the download button reappears.
+  const onRetryNer = useCallback(() => {
+    void loadNer();
+  }, []);
+
   const onDownload = useCallback(() => {
     if (!redacted) {
       return;
@@ -602,13 +609,22 @@ export function App() {
               </div>
               <div className="flex items-center gap-2">
                 {redacted &&
-                  // While the model is still loading for an uploaded file, the redacted file only has
-                  // the deterministic PII removed — names are not in it yet. Block the download until
-                  // NER has settled so nobody saves a half-redacted document (trust: no second chance).
-                  (source?.kind === "file" && ner.status === "loading" ? (
+                  // A redacted FILE only has names removed once NER has settled. Never hand back the
+                  // file before that (trust: no second chance). While loading -> a pending pill; if the
+                  // model FAILED -> withhold the download entirely and offer a retry (the deterministic
+                  // ID/phone/company chips are already shown, so nothing detected is hidden).
+                  (source?.kind === "file" && (ner.status === "loading" || ner.status === "idle") ? (
                     <span className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-hairline px-4 text-[13px] font-medium text-zinc-400">
                       {t("result.downloadPending")}
                     </span>
+                  ) : source?.kind === "file" && ner.status === "error" ? (
+                    <button
+                      type="button"
+                      onClick={onRetryNer}
+                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-red-300 bg-red-50 px-4 text-[13px] font-medium text-red-700 transition hover:bg-red-100"
+                    >
+                      {t("result.retryNames")}
+                    </button>
                   ) : (
                     <button
                       type="button"
@@ -720,9 +736,20 @@ export function App() {
                 >
                   {highlight(result.anonymizedText)}
                 </div>
-                <p className="mt-3 rounded-xl bg-amber-50/60 px-3 py-2 text-xs leading-relaxed text-zinc-600">
-                  {ner.status === "ready" ? t("result.noteNames") : t("result.note")}
-                </p>
+                {source?.kind === "file" && ner.status === "error" ? (
+                  // Names detection failed for a file — the authoritative message is the hard block, not
+                  // the ordinary "loading…" note (which would read as if a file is on its way).
+                  <p
+                    className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-800"
+                    role="alert"
+                  >
+                    {t("result.downloadBlockedNoNames")}
+                  </p>
+                ) : (
+                  <p className="mt-3 rounded-xl bg-amber-50/60 px-3 py-2 text-xs leading-relaxed text-zinc-600">
+                    {ner.status === "ready" ? t("result.noteNames") : t("result.note")}
+                  </p>
+                )}
 
                 <div className="mt-4 rounded-2xl border border-hairline bg-surface p-4">
                   <div className="text-[13px] font-medium text-ink">{t("key.title")}</div>
