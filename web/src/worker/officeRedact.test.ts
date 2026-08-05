@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 import { restore } from "@engine/restore";
-import { redactDocx, redactXlsx, XLSX_FORMULA_PII } from "./officeRedact";
+import { redactDocx, redactXlsx, XLSX_FORMULA_PII, OFFICE_SELFVERIFY_FAILED } from "./officeRedact";
 
 /** Wrap worksheet rows in a valid sheet part; optionally add a shared-string table. */
 async function buildXlsxWith(sheetInner: string, sharedStrings?: string): Promise<ArrayBuffer> {
@@ -122,6 +122,43 @@ describe("redactXlsx", () => {
     expect(rewritten).toContain("[ת״ז_1]");
     expect(rewritten).not.toContain("123456709");
     expect(result.key.length).toBe(1);
+  });
+});
+
+describe("redactOffice — self-verify (fail closed)", () => {
+  const BODY_DOC = (text: string) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body><w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p></w:body>
+</w:document>`;
+
+  it("6. refuses when a detected value also survives in a part the redactor never rewrites", async () => {
+    // Same ID in the body (detected → in the key) AND in docProps/core.xml (not a redacted part).
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", "<Types/>");
+    zip.file("word/document.xml", BODY_DOC("לקוח 123456709"));
+    zip.file(
+      "docProps/core.xml",
+      `<?xml version="1.0"?><cp:coreProperties xmlns:cp="a" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:creator>123456709</dc:creator></cp:coreProperties>`,
+    );
+    const buffer = await zip.generateAsync({ type: "arraybuffer" });
+    await expect(redactDocx(buffer)).rejects.toThrow(OFFICE_SELFVERIFY_FAILED);
+  });
+
+  it("7. passes a normal docx and no original value survives in any output part", async () => {
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", "<Types/>");
+    zip.file("word/document.xml", BODY_DOC("לקוח 123456709 בטלפון 052-1234567"));
+    const buffer = await zip.generateAsync({ type: "arraybuffer" });
+
+    const { bytes } = await redactDocx(buffer);
+    const out = await JSZip.loadAsync(bytes);
+    for (const name of Object.keys(out.files)) {
+      if (!out.files[name].dir && /\.(xml|rels)$/i.test(name)) {
+        const content = await out.files[name].async("string");
+        expect(content).not.toContain("123456709");
+        expect(content).not.toContain("1234567");
+      }
+    }
   });
 });
 

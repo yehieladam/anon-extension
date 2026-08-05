@@ -21,7 +21,12 @@
 import type { AnonymizeResult, Span } from "@engine/types";
 import { anonymizeDeterministic, detectDeterministic } from "@engine/pipeline";
 import { applyOverlay, toReplacements, type Segment } from "@engine/overlay";
+import { decodeXml, encodeXml } from "@engine/xml";
+import { officeLeakScan } from "@engine/officeVerify";
 import { extractText } from "./extract";
+
+// Re-export so existing importers (restoreFile) keep working through this module.
+export { decodeXml, encodeXml } from "@engine/xml";
 
 /**
  * How to anonymize the document's text. Injected so the caller decides deterministic-only vs full
@@ -48,30 +53,8 @@ export interface FileRedaction {
 /** Thrown when an xlsx has PII in a FORMULA cell — refused rather than under-redacted (surfaced in UI). */
 export const XLSX_FORMULA_PII = "XLSX_FORMULA_PII";
 
-const NAMED_DECODE: ReadonlyArray<readonly [RegExp, string]> = [
-  [/&lt;/g, "<"],
-  [/&gt;/g, ">"],
-  [/&quot;/g, '"'],
-  [/&apos;/g, "'"],
-];
-
-/** Decode the XML entities that can appear inside a text node (named + numeric). `&amp;` last. */
-export function decodeXml(text: string): string {
-  let out = text;
-  for (const [pattern, replacement] of NAMED_DECODE) {
-    out = out.replace(pattern, replacement);
-  }
-  out = out.replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) =>
-    String.fromCodePoint(Number.parseInt(hex, 16)),
-  );
-  out = out.replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(Number.parseInt(dec, 10)));
-  return out.replace(/&amp;/g, "&");
-}
-
-/** Re-encode text for an XML text node. `&` first so we never double-escape. */
-export function encodeXml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+/** Thrown when an original PII value still appears in ANY text part of the output — refuse, never ship. */
+export const OFFICE_SELFVERIFY_FAILED = "OFFICE_SELFVERIFY_FAILED";
 
 /** A region of one XML part to rewrite in place. "text" = a text-node's inner; "numcell" = a whole `<c>`. */
 interface Edit {
@@ -293,6 +276,24 @@ async function redactOffice(
   for (const [path, content] of updated) {
     zip.file(path, content);
   }
+
+  // Self-verify (fail closed): re-scan EVERY text part of the final zip — including parts the redactor
+  // never rewrote (docProps metadata, comments, settings) — and refuse if any original value survives.
+  // This is the office analogue of the PDF three-layer self-verify: the guarantee, not best-effort.
+  const scanMap = new Map<string, string>();
+  for (const name of Object.keys(zip.files)) {
+    if (!zip.files[name].dir && /\.(xml|rels)$/i.test(name)) {
+      scanMap.set(name, await zip.files[name].async("string"));
+    }
+  }
+  const scan = officeLeakScan(
+    scanMap,
+    result.key.map((row) => row.original),
+  );
+  if (!scan.pass) {
+    throw new Error(`${OFFICE_SELFVERIFY_FAILED}: ${scan.hits.join(", ")}`);
+  }
+
   const bytes = await zip.generateAsync({ type: "uint8array" });
   return { bytes, result };
 }
