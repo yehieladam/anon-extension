@@ -17,10 +17,14 @@ export default tseslint.config(
       "dist/**",
       "dist-web/**",
       "node_modules/**",
+      // Vendored third-party OCR runtime (minified worker + wasm glue), fetched at build — never lint.
+      "web/public/vendor/**",
       // Local screenshot/verification scratch scripts (not product code, not committed).
       "_*.mjs",
       // Node build-time tooling for test fixtures (uses node globals), not shipped product code.
       "web/test-fixtures/**/*.mjs",
+      // Node build/setup scripts (vendor assets, uses node globals), not shipped product code.
+      "scripts/**/*.mjs",
     ],
   },
   js.configs.recommended,
