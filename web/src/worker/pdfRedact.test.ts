@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { extractPdfMapped, redactPdf, NO_TEXT_LAYER } from "./pdfRedact";
+import { collectOutlineItems } from "./pdfSanitize";
 import { anonymizeDeterministic, anonymizeFull, detectDeterministic } from "@engine/pipeline";
 import { quadsForSpan, refsToRects } from "@engine/pdfText";
 import { layerB, layerC } from "@engine/pdfVerify";
@@ -117,6 +118,35 @@ describe("redactPdf — true removal + in-production self-verify (real fixture)"
     expect(c.pass).toBe(false);
     expect(c.eofCount).toBeGreaterThan(1);
     /* eslint-enable @typescript-eslint/no-explicit-any */
+  });
+});
+
+describe("redactPdf — strips hidden metadata + anonymizes the outline coherently (dirty.pdf)", () => {
+  it("removes the body ID, strips the Info dict, and gives the outline the body's placeholder", async () => {
+    // Model-free move of the old pdf-sanitize BROWSER gate: redactPdf self-verifies the Info dict and
+    // outline titles, so if it returns, those channels are clean of the key's originals. We also assert
+    // the observable results on the bytes. (The Hebrew NAME in the outline needs NER — that fidelity is
+    // the @model spec's job; here the deterministic ID is the needle.)
+    const ID = "123456709";
+    const { bytes } = await redactPdf(
+      readAsArrayBuffer("web/test-fixtures/pdf/dirty.pdf"),
+      anonymizeDeterministic,
+    );
+    // reason: mupdf's WASM surface is untyped; used here to read back the redacted document.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mupdf = (await import("mupdf")) as any;
+    const doc = mupdf.PDFDocument.openDocument(bytes, "application/pdf");
+
+    const reExtracted = await extractPdfMapped(bytes.buffer.slice(0) as ArrayBuffer);
+    expect(reExtracted.text).not.toContain(ID); // body
+
+    const info = doc.getTrailer().get("Info"); // Info dict stripped
+    expect(info === null || (info.isNull?.() ?? false)).toBe(true);
+
+    const items = collectOutlineItems(doc); // outline carries the body's placeholder (unified key)
+    expect(items.length).toBeGreaterThanOrEqual(1);
+    expect(items[0].title).not.toContain(ID);
+    expect(items[0].title).toMatch(/\[.+_\d+\]/);
   });
 });
 
