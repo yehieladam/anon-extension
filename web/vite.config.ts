@@ -9,7 +9,8 @@ import react from "@vitejs/plugin-react";
  *
  * COOP/COEP make the served page `crossOriginIsolated`, which lets onnxruntime-web use
  * multi-threaded WASM for faster NER (Phase-0). These headers are set for dev + preview here;
- * production is served with the same headers via web/vercel.json.
+ * production is served with the same headers via the repo-root vercel.json (which Vercel reads from
+ * the project root — the repo root, since build:web + package.json live there).
  */
 const COOP = "same-origin";
 const COEP = "require-corp";
@@ -26,7 +27,7 @@ const COEP = "require-corp";
  *
  * HARDENING (P4-02): self-host the model on R2 AND vendor the ORT wasm locally, then collapse
  * `connect-src` to `'self'` — removing every third-party runtime dependency. Keep in sync with
- * web/vercel.json.
+ * the repo-root vercel.json.
  */
 const CSP = [
   "default-src 'self'",
