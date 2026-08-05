@@ -24,6 +24,7 @@ import type { RestoreResult } from "@engine/restore";
 import type { HebrewNer } from "@engine/ner";
 import { redactFile, type FileRedaction } from "./officeRedact";
 import { restoreFile, type RestoredFile } from "./restoreFile";
+import { buildTokenDocx } from "./textDocx";
 import { installWorkerNetworkMonitor, onWorkerNetwork } from "./workerNetworkMonitor";
 
 // Patch the worker's fetch at module-eval, well before any loadNer() call reaches the network.
@@ -110,6 +111,14 @@ const api = {
   /** Put original values back using the key (tolerant matcher). */
   restore(text: string, key: readonly KeyRow[]): RestoreResult {
     return restore(text, key);
+  },
+
+  /**
+   * Wrap tokenized text in a minimal .docx — the "Word for AI" output for a redacted PDF (whose visual
+   * redaction carries no tokens). The tokens are LLM-workable and the file restores via restoreFile.
+   */
+  buildTokenDocx(text: string): Promise<Uint8Array> {
+    return buildTokenDocx(text);
   },
 
   /** Restore an uploaded file (docx/txt) with the key → reconstructed file bytes to download. */
