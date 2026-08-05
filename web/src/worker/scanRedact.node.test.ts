@@ -11,13 +11,16 @@
  * (the calibration worst case) is proven at the unit level in engine/src/detectScanPii.test.ts case 2;
  * here we prove the generic OCR -> detect -> REDACT_IMAGE_PIXELS -> re-OCR-blank chain on real pixels.
  */
+import { setDefaultResultOrder } from "node:dns";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { anonymizeDeterministic } from "@engine/pipeline";
+import { anonymizeDeterministic, anonymizeWith } from "@engine/pipeline";
 import { labelAnchorBoxes, detectScanPii } from "@engine/detectScanPii";
 import type { OcrPageResult, OcrWord } from "@engine/ocrTypes";
 import { redactScan, selfVerifyScan, SCAN_LOW_CONFIDENCE, SCAN_SELFVERIFY_FAILED, type ScanDetect } from "./scanRedact";
+
+setDefaultResultOrder("ipv4first"); // the dev machine's IPv6 route to HF is dead (any NER model fetch)
 
 const fullDetect: ScanDetect = (page) => detectScanPii(page, anonymizeDeterministic);
 
@@ -167,5 +170,22 @@ run("scan redaction reality — real image-only scan", () => {
     const scan = scanPdfFromPixmap(mupdf, rasterPixmap(mupdf, SOURCE, 90, 140), 90);
     await expect(redactScan(scan, anonymizeDeterministic, nodeOcr)).rejects.toThrow(SCAN_LOW_CONFIDENCE);
   }, 300_000);
+
+  it("redacts a Hebrew NAME on a scan via NER — re-OCR finds no name (pre-flip checklist #4)", async () => {
+    // The name-on-scan proof: real tesseract OCR -> real Hebrew NER on the OCR text -> the PERSON name
+    // (both occurrences, via occurrence-completion) is pixel-redacted -> re-OCR of the output finds no
+    // "ישראל". This is the substance of the @model scan-names check, runnable from the cached model.
+    const { createHebrewNer } = await import("@engine/ner");
+    const ner = await createHebrewNer({ device: "cpu" }); // node uses onnxruntime-node (cpu); q8 identical
+    const anonymize = async (text: string) => anonymizeWith(text, await ner.recognize(text));
+    const mupdf: any = await import("mupdf");
+    const scan = scanPdfFromPixmap(mupdf, rasterPixmap(mupdf, SOURCE, 200), 200);
+    const { bytes } = await redactScan(scan, anonymize, nodeOcr);
+    const text = (await reOcrText(bytes)).replace(/\s/g, "");
+    // eslint-disable-next-line no-console
+    console.log(`name-on-scan re-OCR:\n${await reOcrText(bytes)}`);
+    expect(text).not.toContain("ישראל"); // the PERSON name pixels are gone (both occurrences)
+    expect(text).not.toContain("123456709"); // ID gone too (deterministic + digit-relax)
+  }, 600_000);
 });
 /* eslint-enable @typescript-eslint/no-explicit-any */
