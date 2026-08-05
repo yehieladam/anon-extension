@@ -101,6 +101,7 @@ export function App() {
   const [copied, setCopied] = useState(false);
   const [fileError, setFileError] = useState(false);
   const [scannedNotice, setScannedNotice] = useState(false);
+  const [formulaNotice, setFormulaNotice] = useState(false);
   const [redacted, setRedacted] = useState<{ bytes: Uint8Array; name: string; mime: string } | null>(
     null,
   );
@@ -160,6 +161,7 @@ export function App() {
       setStatus("reading");
       setFileError(false);
       setScannedNotice(false);
+      setFormulaNotice(false);
       setManualTerms([]);
       try {
         const buffer = await file.arrayBuffer();
@@ -176,6 +178,10 @@ export function App() {
         if (error instanceof Error && error.message.includes("NO_TEXT_LAYER")) {
           setSource(null);
           setScannedNotice(true);
+        } else if (error instanceof Error && error.message.includes("XLSX_FORMULA_PII")) {
+          // A number produced by a formula can't be safely overlaid (recalc regenerates it) — refuse.
+          setSource(null);
+          setFormulaNotice(true);
         } else {
           setFileError(true);
         }
@@ -521,6 +527,14 @@ export function App() {
               role="alert"
             >
               {t("input.scannedPdf")}
+            </div>
+          )}
+          {formulaNotice && (
+            <div
+              className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-800"
+              role="alert"
+            >
+              {t("input.formulaPii")}
             </div>
           )}
           {ner.status === "loading" && (

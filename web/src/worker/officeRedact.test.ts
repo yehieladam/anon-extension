@@ -9,7 +9,24 @@
 import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 import { restore } from "@engine/restore";
-import { redactDocx, redactXlsx } from "./officeRedact";
+import { redactDocx, redactXlsx, XLSX_FORMULA_PII } from "./officeRedact";
+
+/** Wrap worksheet rows in a valid sheet part; optionally add a shared-string table. */
+async function buildXlsxWith(sheetInner: string, sharedStrings?: string): Promise<ArrayBuffer> {
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${sheetInner}</sheetData></worksheet>`;
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", "<Types/>");
+  zip.file("xl/worksheets/sheet1.xml", sheet);
+  if (sharedStrings !== undefined) {
+    zip.file("xl/sharedStrings.xml", sharedStrings);
+  }
+  return zip.generateAsync({ type: "arraybuffer" });
+}
+
+async function sheetOut(bytes: Uint8Array): Promise<string> {
+  return (await JSZip.loadAsync(bytes)).file("xl/worksheets/sheet1.xml")!.async("string");
+}
 
 const LOGO_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4, 5]);
 
@@ -105,5 +122,90 @@ describe("redactXlsx", () => {
     expect(rewritten).toContain("[ת״ז_1]");
     expect(rewritten).not.toContain("123456709");
     expect(result.key.length).toBe(1);
+  });
+});
+
+describe("redactXlsx — numeric cells (the silent-leak fix)", () => {
+  it("1. redacts a 9-digit ID stored as a NUMBER and keeps the restore mapping", async () => {
+    const { bytes, result } = await redactXlsx(
+      await buildXlsxWith(`<row r="1"><c r="A1"><v>123456709</v></c></row>`),
+    );
+    const out = await sheetOut(bytes);
+    expect(out).toContain('t="inlineStr"');
+    expect(out).toContain("[ת״ז_1]");
+    expect(out).not.toContain("123456709");
+    expect(result.key.map((r) => r.type)).toContain("ISRAELI_ID");
+    expect(restore("[ת״ז_1]", result.key).restoredText).toBe("123456709");
+  });
+
+  it("2. restores the leading zero dropped by numeric storage (8-digit → valid 9-digit ID)", async () => {
+    // 012345674 is a checksum-valid ID (and not a valid phone — 01 is not an area code); stored as a
+    // number it loses the leading zero (12345674).
+    const { bytes, result } = await redactXlsx(
+      await buildXlsxWith(`<row r="1"><c r="A1"><v>12345674</v></c></row>`),
+    );
+    const out = await sheetOut(bytes);
+    expect(out).toContain("[ת״ז_1]");
+    expect(out).not.toContain("12345674");
+    expect(result.key[0].original).toBe("012345674");
+  });
+
+  it("3. leaves a shared-string INDEX cell (t=\"s\") byte-identical while redacting shared text", async () => {
+    const shared = `<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>מספר זהות 123456709</t></si></sst>`;
+    const { bytes } = await redactXlsx(
+      await buildXlsxWith(`<row r="1"><c r="A1" t="s"><v>0</v></c></row>`, shared),
+    );
+    const out = await sheetOut(bytes);
+    // The index cell is untouched (still points at shared string 0)…
+    expect(out).toContain('<c r="A1" t="s"><v>0</v></c>');
+    // …and the shared string itself is redacted.
+    const sharedOut = await (await JSZip.loadAsync(bytes)).file("xl/sharedStrings.xml")!.async("string");
+    expect(sharedOut).toContain("[ת״ז_1]");
+    expect(sharedOut).not.toContain("123456709");
+  });
+
+  it("4. leaves ordinary numbers untouched (no inline-string conversion)", async () => {
+    const sheet = `<row r="1"><c r="A1"><v>42</v></c><c r="A2"><v>3.14</v></c><c r="A3"><v>123456700</v></c></row>`;
+    const { bytes, result } = await redactXlsx(await buildXlsxWith(sheet));
+    const out = await sheetOut(bytes);
+    expect(out).not.toContain("inlineStr");
+    expect(out).toContain("<v>42</v>");
+    expect(out).toContain("<v>3.14</v>");
+    expect(out).toContain("<v>123456700</v>"); // 9 digits but checksum-invalid → not an ID
+    expect(result.key.length).toBe(0);
+  });
+
+  it("5. preserves the cell's r and s attributes through the conversion", async () => {
+    const { bytes } = await redactXlsx(
+      await buildXlsxWith(`<row r="1"><c r="B2" s="4"><v>123456709</v></c></row>`),
+    );
+    const out = await sheetOut(bytes);
+    expect(out).toMatch(/<c r="B2" s="4" t="inlineStr">/);
+  });
+
+  it("6. refuses (throws) an xlsx whose PII sits in a FORMULA cell", async () => {
+    const sheet = `<row r="1"><c r="A1"><f>B1&amp;C1</f><v>123456709</v></c></row>`;
+    await expect(redactXlsx(await buildXlsxWith(sheet))).rejects.toThrow(XLSX_FORMULA_PII);
+  });
+
+  it("7. leaves no original ID digits anywhere in the output part", async () => {
+    const { bytes } = await redactXlsx(
+      await buildXlsxWith(`<row r="1"><c r="A1"><v>40493389</v></c></row>`),
+    );
+    const out = await sheetOut(bytes);
+    expect(out).not.toContain("40493389");
+    expect(out).not.toContain("040493389");
+  });
+
+  it("8. numbers text (sharedString phone) and numeric (ID) cells coherently", async () => {
+    const shared = `<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>טלפון 052-1234567</t></si></sst>`;
+    const { result } = await redactXlsx(
+      await buildXlsxWith(`<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1"><v>123456709</v></c></row>`, shared),
+    );
+    const types = result.key.map((r) => r.type).sort();
+    expect(types).toEqual(["IL_PHONE", "ISRAELI_ID"]);
+    // Distinct, non-colliding placeholders.
+    const placeholders = result.key.map((r) => r.placeholder);
+    expect(new Set(placeholders).size).toBe(placeholders.length);
   });
 });

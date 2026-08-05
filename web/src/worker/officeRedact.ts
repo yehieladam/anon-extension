@@ -9,13 +9,17 @@
  * ([שם_1] …) and the restore key are coherent across body, headers and footers. Values split across
  * several runs (Word does this constantly) are handled by the overlay char-walk.
  *
- * Limitations (documented, not hidden): xlsx numbers stored as numeric cells (`<v>`, not text) are not
- * yet redacted here; rich-text run splits inside a cell are handled. Inline sheet strings ARE now
- * handled (both the shared-string table and worksheet inline strings are processed). Numeric cells
- * remain a follow-up — see docs/tasks.md.
+ * xlsx cell text is handled in every form: the shared-string table (`<si><t>`), inline worksheet
+ * strings (`<c t="inlineStr"><is><t>`), AND NUMERIC cells (`<c><v>040493384</v></c>` — an Israeli ID /
+ * phone / company number typed as a number). A numeric PII cell is rewritten to an inline-string cell
+ * carrying the placeholder. Leading zeros dropped by numeric storage are restored via the real
+ * recognizers (an 8-digit stored value is tested as "0"+value). A numeric cell whose value comes from
+ * a FORMULA (`<f>`) is refused (throw XLSX_FORMULA_PII) rather than under-redacted — recalculation
+ * would regenerate the cached value and the formula/source may itself hold the PII. Numbers Excel
+ * never uses for 9-digit integers (scientific notation) are the remaining documented non-case.
  */
-import type { AnonymizeResult } from "@engine/types";
-import { anonymizeDeterministic } from "@engine/pipeline";
+import type { AnonymizeResult, Span } from "@engine/types";
+import { anonymizeDeterministic, detectDeterministic } from "@engine/pipeline";
 import { applyOverlay, toReplacements, type Segment } from "@engine/overlay";
 import { extractText } from "./extract";
 
@@ -41,14 +45,8 @@ export interface FileRedaction {
   readonly bytes?: Uint8Array;
 }
 
-/** A single editable text node located in one XML part of the zip. */
-interface TextNode {
-  readonly path: string;
-  readonly innerStart: number;
-  readonly innerEnd: number;
-  /** Group id (part + paragraph/string index) — a separator is inserted between different groups. */
-  readonly group: string;
-}
+/** Thrown when an xlsx has PII in a FORMULA cell — refused rather than under-redacted (surfaced in UI). */
+export const XLSX_FORMULA_PII = "XLSX_FORMULA_PII";
 
 const NAMED_DECODE: ReadonlyArray<readonly [RegExp, string]> = [
   [/&lt;/g, "<"],
@@ -75,32 +73,48 @@ export function encodeXml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/** A region of one XML part to rewrite in place. "text" = a text-node's inner; "numcell" = a whole `<c>`. */
+interface Edit {
+  readonly path: string;
+  readonly kind: "text" | "numcell";
+  readonly start: number;
+  readonly end: number;
+  /** Group id — a separator is inserted between different groups so detection never bridges them. */
+  readonly group: string;
+  /** Decoded text fed to detection (for a numeric cell, its leading-zero-restored value). */
+  readonly text: string;
+  /** numcell only: the original `<c>` attributes with any `t="…"` removed (we set t="inlineStr"). */
+  readonly cellAttrs?: string;
+  /** numcell only: the value comes from a formula — refuse rather than under-redact. */
+  readonly isFormula?: boolean;
+}
+
 /**
- * Find every `<tag>…</tag>` text node in a part, tagging each with a group id built from the part
- * order and the number of `groupTag` openings before it (paragraph in docx, `<si>` in xlsx). Nodes in
- * the same group are concatenated with no separator (they are one logical line); different groups get
- * a newline so detection never bridges unrelated text.
+ * Collect every `<tag>…</tag>` text node in a part as an Edit (kind "text"), tagging each with a group
+ * id from the part order and the number of `groupTag` openings before it (paragraph in docx, `<si>` /
+ * `<c>` in xlsx). Nodes in the same group are one logical line; different groups get a newline.
  */
-function collectNodes(part: string, path: string, partOrder: number, tag: string, groupTag: string): {
-  nodes: TextNode[];
-  decoded: string[];
-} {
+function collectTextEdits(part: string, path: string, order: number, tag: string, groupTag: string): Edit[] {
   const nodeRegex = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`, "g");
   const groupRegex = new RegExp(`<${groupTag}\\b`, "g");
   const groupStarts: number[] = [];
   for (let match = groupRegex.exec(part); match !== null; match = groupRegex.exec(part)) {
     groupStarts.push(match.index);
   }
-  const nodes: TextNode[] = [];
-  const decoded: string[] = [];
+  const edits: Edit[] = [];
   for (let match = nodeRegex.exec(part); match !== null; match = nodeRegex.exec(part)) {
     const inner = match[1];
     const innerStart = match.index + (match[0].length - inner.length - (tag.length + 3));
-    const groupIndex = countBefore(groupStarts, match.index);
-    nodes.push({ path, innerStart, innerEnd: innerStart + inner.length, group: `${partOrder}:${groupIndex}` });
-    decoded.push(decodeXml(inner));
+    edits.push({
+      path,
+      kind: "text",
+      start: innerStart,
+      end: innerStart + inner.length,
+      group: `${order}:${countBefore(groupStarts, match.index)}`,
+      text: decodeXml(inner),
+    });
   }
-  return { nodes, decoded };
+  return edits;
 }
 
 /** Number of ascending `starts` strictly less than `pos` (binary search). */
@@ -118,56 +132,132 @@ function countBefore(starts: readonly number[], pos: number): number {
   return low;
 }
 
+/** Whether the deterministic recognizers fully cover `value` (a whole-value match). */
+function fullyCovered(value: string): boolean {
+  return detectDeterministic(value).some((s: Span) => s.start === 0 && s.end === value.length);
+}
+
 /**
- * Core: given the ordered parts and their editable nodes, run one detection pass over the whole
- * concatenated stream, then splice the redacted text back into each part. Returns the new part
- * strings plus the AnonymizeResult (for the UI chips + restore key).
+ * A numeric cell's value is PII iff a deterministic recognizer covers it whole. Numeric storage drops
+ * leading zeros, so an 8-or-9-digit value is also tested as "0"+value (a stored 8-digit ID is a valid
+ * 9-digit ID; a stored 9-digit mobile is a valid 10-digit phone). Returns the value to redact (zero-
+ * restored when that is the form that matches), or null when the cell is an ordinary number.
+ */
+function numericPii(raw: string): string | null {
+  const candidates = /^\d{8,9}$/.test(raw) ? [`0${raw}`, raw] : [raw];
+  for (const candidate of candidates) {
+    if (fullyCovered(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+/** Collect the numeric PII cells of a worksheet part as Edits (kind "numcell"). */
+function collectNumericEdits(part: string, path: string, order: number): Edit[] {
+  const cellRegex = /<c\b[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g;
+  const edits: Edit[] = [];
+  let index = 0;
+  for (let match = cellRegex.exec(part); match !== null; match = cellRegex.exec(part)) {
+    const full = match[0];
+    if (full.endsWith("/>")) {
+      continue; // self-closing empty cell
+    }
+    const gt = full.indexOf(">");
+    const attrs = full.slice(2, gt); // after "<c"
+    const inner = full.slice(gt + 1, full.length - "</c>".length);
+    const valueMatch = /<v>([\s\S]*?)<\/v>/.exec(inner);
+    if (valueMatch === null) {
+      continue; // no value (e.g. inline-string cell, handled by the text path)
+    }
+    const typeMatch = /\bt="([^"]*)"/.exec(attrs);
+    if (typeMatch !== null && typeMatch[1] === "s") {
+      continue; // shared-string index — must stay byte-identical
+    }
+    const contributed = numericPii(decodeXml(valueMatch[1]));
+    if (contributed === null) {
+      continue; // ordinary number
+    }
+    edits.push({
+      path,
+      kind: "numcell",
+      start: match.index,
+      end: match.index + full.length,
+      group: `${order}:num:${index}`,
+      text: contributed,
+      cellAttrs: attrs.replace(/\s+t="[^"]*"/g, ""),
+      isFormula: /<f[\s>/]/.test(inner),
+    });
+    index += 1;
+  }
+  return edits;
+}
+
+/**
+ * Core: collect every editable region across the ordered parts, run ONE detection pass over their
+ * concatenated text, then splice each redaction back in place. Returns the new part strings plus the
+ * AnonymizeResult (for the UI chips + restore key).
  */
 async function redactParts(
-  parts: ReadonlyArray<{ path: string; content: string; groupTag: string }>,
+  parts: ReadonlyArray<{ path: string; content: string; groupTag: string; numeric: boolean }>,
   tag: string,
   anonymize: Anonymize,
 ): Promise<{ updated: Map<string, string>; result: AnonymizeResult }> {
-  const allNodes: TextNode[] = [];
+  const perPart = parts.map((part, order) => {
+    const text = collectTextEdits(part.content, part.path, order, tag, part.groupTag);
+    const numeric = part.numeric ? collectNumericEdits(part.content, part.path, order) : [];
+    return [...text, ...numeric].sort((a, b) => a.start - b.start);
+  });
+
+  const allEdits: Edit[] = [];
   const segments: Segment[] = [];
   let concat = "";
   let previousGroup: string | null = null;
-
-  parts.forEach((part, order) => {
-    const { nodes, decoded } = collectNodes(part.content, part.path, order, tag, part.groupTag);
-    nodes.forEach((node, i) => {
-      if (previousGroup !== null && node.group !== previousGroup) {
+  for (const edits of perPart) {
+    for (const edit of edits) {
+      if (previousGroup !== null && edit.group !== previousGroup) {
         concat += "\n";
       }
-      previousGroup = node.group;
+      previousGroup = edit.group;
       const start = concat.length;
-      concat += decoded[i];
+      concat += edit.text;
       segments.push({ start, end: concat.length });
-      allNodes.push(node);
-    });
-  });
+      allEdits.push(edit);
+    }
+  }
 
   const result = await anonymize(concat);
   const rewritten = applyOverlay(concat, segments, toReplacements(concat, result));
 
-  // Splice each node's new text back, per part, from the last node to the first so offsets hold.
+  // Splice per part, from the last region to the first so earlier offsets stay valid.
   const updated = new Map<string, string>(parts.map((part) => [part.path, part.content]));
-  for (let i = allNodes.length - 1; i >= 0; i -= 1) {
-    const node = allNodes[i];
-    if (rewritten[i] === concatSliceOfNode(concat, segments[i])) {
-      continue; // unchanged node — skip the splice
+  const byPath = new Map<string, { edit: Edit; text: string }[]>();
+  allEdits.forEach((edit, i) => {
+    const list = byPath.get(edit.path) ?? [];
+    list.push({ edit, text: rewritten[i] });
+    byPath.set(edit.path, list);
+  });
+
+  for (const [path, list] of byPath) {
+    list.sort((a, b) => b.edit.start - a.edit.start);
+    let content = updated.get(path) as string;
+    for (const { edit, text } of list) {
+      if (text === edit.text) {
+        continue; // unchanged region
+      }
+      if (edit.kind === "text") {
+        content = content.slice(0, edit.start) + encodeXml(text) + content.slice(edit.end);
+      } else {
+        if (edit.isFormula) {
+          throw new Error(XLSX_FORMULA_PII);
+        }
+        const cell = `<c${edit.cellAttrs} t="inlineStr"><is><t xml:space="preserve">${encodeXml(text)}</t></is></c>`;
+        content = content.slice(0, edit.start) + cell + content.slice(edit.end);
+      }
     }
-    const content = updated.get(node.path) as string;
-    updated.set(
-      node.path,
-      content.slice(0, node.innerStart) + encodeXml(rewritten[i]) + content.slice(node.innerEnd),
-    );
+    updated.set(path, content);
   }
   return { updated, result };
-}
-
-function concatSliceOfNode(concat: string, segment: Segment): string {
-  return concat.slice(segment.start, segment.end);
 }
 
 /** docx: body + headers + footers + notes, in reading order. */
@@ -184,6 +274,7 @@ async function redactOffice(
   order: (name: string) => number,
   tag: string,
   groupTagFor: (name: string) => string,
+  numericFor: (name: string) => boolean,
   anonymize: Anonymize,
 ): Promise<RedactedFile> {
   const zip = await loadZip(buffer);
@@ -195,6 +286,7 @@ async function redactOffice(
       path,
       content: await zip.files[path].async("string"),
       groupTag: groupTagFor(path),
+      numeric: numericFor(path),
     })),
   );
   const { updated, result } = await redactParts(parts, tag, anonymize);
@@ -220,19 +312,18 @@ function numberIn(name: string): number {
 
 /** Redact a .docx by overlaying placeholders onto its `<w:t>` runs, preserving everything else. */
 export function redactDocx(buffer: ArrayBuffer, anonymize: Anonymize = anonymizeDeterministic): Promise<RedactedFile> {
-  return redactOffice(buffer, (name) => DOCX_PART.test(name), docxOrder, "w:t", () => "w:p", anonymize);
+  return redactOffice(buffer, (name) => DOCX_PART.test(name), docxOrder, "w:t", () => "w:p", () => false, anonymize);
 }
 
-/** A worksheet part (holds inline strings when a file doesn't use the shared-string table). */
+/** A worksheet part (holds inline strings and numeric cells). */
 const XLSX_SHEET = /^xl\/worksheets\/sheet\d+\.xml$/;
 
 /**
- * Redact a .xlsx by overlaying placeholders onto its text `<t>` nodes. Excel/Sheets store cell text in
- * the shared-string table (`xl/sharedStrings.xml`, `<si><t>`), but some generators write INLINE strings
- * straight into the worksheet (`<c t="inlineStr"><is><t>`). Both live in `<t>` elements, so we process
- * the shared-string table AND every worksheet — otherwise an inline-string file would slip through
- * unredacted (a silent leak). The `t="inlineStr"` attribute is not matched (`<t\b` needs `<t`, not
- * `<c t=`). Numeric cells (`<v>`) are still out of scope — a documented follow-up.
+ * Redact a .xlsx by overlaying placeholders onto its text `<t>` nodes AND its numeric PII cells. Excel/
+ * Sheets store cell text in the shared-string table (`xl/sharedStrings.xml`, `<si><t>`), but some
+ * generators write INLINE strings into the worksheet (`<c t="inlineStr"><is><t>`), and IDs/phones/
+ * company numbers are frequently stored as NUMBERS (`<c><v>…</v></c>`). All three are handled — see the
+ * file header. The `t="inlineStr"` attribute is never mistaken for a `<t>` element (`<t\b` needs `<t`).
  */
 export function redactXlsx(buffer: ArrayBuffer, anonymize: Anonymize = anonymizeDeterministic): Promise<RedactedFile> {
   return redactOffice(
@@ -241,6 +332,7 @@ export function redactXlsx(buffer: ArrayBuffer, anonymize: Anonymize = anonymize
     (name) => (name === "xl/sharedStrings.xml" ? 0 : 1 + numberIn(name)),
     "t",
     (name) => (name === "xl/sharedStrings.xml" ? "si" : "c"),
+    (name) => XLSX_SHEET.test(name),
     anonymize,
   );
 }
