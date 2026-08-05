@@ -1,23 +1,33 @@
 /**
- * Scan-quality gate — the honesty guarantee of the scanned-PDF (OCR) track, and its SOLE defense
- * against silently-dropped PII.
+ * Scan-quality gate — one layer of the scanned-PDF (OCR) track's defense-in-depth, NOT its sole
+ * guarantee.
  *
- * THE CRUX (do not weaken): OCR's dangerous failure is not a low-confidence word — it is a word the
- * engine never emits at all. A dropped word has no bbox and no confidence entry, so it is invisible to
- * any per-word confidence check AND to the re-OCR self-verify (re-OCR of a still-present name just
- * drops it again, so the verify passes falsely). In the PDF-05a spike a noisy scan silently missed a
- * NAME at page-mean confidence 89 — an under-redaction under our own promise. Therefore the only
- * protection is a conservative WHOLE-PAGE quality bar that refuses the whole file when a page reads
- * poorly, erring toward refusal. Never turn this into a per-word pass/fail, and never lower the floor
- * to "rescue" a borderline scan — a scan we cannot read reliably must be refused, not partially
- * redacted. Thresholds are calibrated from a real synthetic-scan corpus in Stage 1 (OCR-01).
+ * THE CRUX (do not weaken, and do not overclaim — see docs/ocr-calibration.md): the confidence gate
+ * (lowRatio primary, meanConf backstop) defends the UNSURE-degradation tier — scans that read so
+ * poorly the whole file must be refused. It does NOT and CANNOT catch a confident misread: OCR emits a
+ * wrong token at high confidence (Stage-1 calibration: an all-1s Israeli ID collapsed to a column of
+ * Hebrew vav strokes at lowRatio 0 and word-confidence 85 — invisible to any page-level aggregate,
+ * because the failure is content-specific, not an image-quality scalar; variance-of-Laplacian was also
+ * empirically refuted). Confident misreads are defended at the CONTENT layer in the redaction pipeline:
+ * label-anchored redaction (redact any token containing/adjacent to a PII label, content-blind), ID
+ * relax-checksum in scan mode, and phone bbox pixel self-heal. A residual class — an UNLABELED value
+ * that collapses to a non-matching (non-digit) token at sub-envelope (fax-grade, <=~60-DPI-equivalent)
+ * resolution — is uncovered and documented as a known v1 limitation, not hidden.
+ *
+ * So: never turn this into a per-word pass/fail, never lower a threshold to "rescue" a borderline scan,
+ * and never re-describe this gate as the sole defense — it is one layer among several. Thresholds are
+ * calibrated from a real synthetic-scan corpus in Stage 1 (OCR-01); see docs/ocr-calibration.md.
  */
 import type { OcrPageResult, OcrWord } from "./ocrTypes";
 
-// PLACEHOLDER — calibrated in Stage 1 (OCR-01). Floor sits above the spike's observed 89 failure.
-const SCAN_MEAN_CONF_FLOOR = 90;
+// Calibrated in Stage 1 (OCR-01) on a 64-sample synthetic-scan corpus. lowRatio is the PRIMARY
+// separator; meanConf is a WEAK backstop only (a FAIL at meanConf 81.3 outranks a PASS at 79.4 — do
+// not tighten FLOOR expecting it to catch fails). MAX_LOW_CONF_RATIO sits between clean-max .091 and
+// fail-min .167; if production shows clean scans false-refusing, the safe band is [0.12, 0.14] and the
+// HARD ceiling is < 0.167 (never cross it — that is where real recall failures begin).
+const SCAN_MEAN_CONF_FLOOR = 75;
 const LOW_CONF_WORD_FLOOR = 60;
-const MAX_LOW_CONF_RATIO = 0.15;
+const MAX_LOW_CONF_RATIO = 0.12;
 
 /** Refusal code surfaced to the UI when a scan reads too poorly to redact reliably. */
 export const SCAN_LOW_CONFIDENCE = "SCAN_LOW_CONFIDENCE";

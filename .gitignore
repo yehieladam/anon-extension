@@ -39,3 +39,6 @@ CLAUDE.md
 
 # Vendored OCR runtime + traineddata (fetched at build/setup, not committed — like the NER model)
 web/public/vendor/
+scripts/*.jsonl
+scripts/*.log
+scripts/ocr-calibration*.json
