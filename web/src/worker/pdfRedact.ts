@@ -36,6 +36,17 @@ export const NO_TEXT_LAYER = "NO_TEXT_LAYER";
 /** Below this many non-whitespace characters across the whole document, we treat it as image-only. */
 const NO_TEXT_LAYER_MIN_CHARS = 3;
 
+/**
+ * Classify a PDF as text-layer vs scanned (image-only) by the same threshold redactPdf refuses on —
+ * shared so the dispatcher can ROUTE (scan → OCR path) instead of hitting the NO_TEXT_LAYER refusal.
+ * A cheap extra mupdf open; OCR dwarfs it. redactPdf keeps its own NO_TEXT_LAYER throw as a backstop.
+ */
+export async function isScannedPdf(buffer: ArrayBuffer): Promise<boolean> {
+  const mupdf: any = await import("mupdf");
+  const doc = mupdf.PDFDocument.openDocument(new Uint8Array(buffer), "application/pdf");
+  return mappedFromDoc(doc).text.replace(/\s/g, "").length < NO_TEXT_LAYER_MIN_CHARS;
+}
+
 /** Build the mapped text from an already-open mupdf document (shared by extract + redact). */
 function mappedFromDoc(doc: any): MappedText {
   const pages: PageLines[] = [];

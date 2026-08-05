@@ -25,6 +25,8 @@ import { decodeXml, encodeXml } from "@engine/xml";
 import { officeLeakScan } from "@engine/officeVerify";
 import { sanitizeOfficeMetadata } from "./officeSanitize";
 import { extractText } from "./extract";
+// Type-only (erased at runtime) — avoids an officeRedact <-> scanRedact require cycle.
+import type { ScanOcr, ScanDetect, ScanProgress } from "./scanRedact";
 
 // Re-export so existing importers (restoreFile) keep working through this module.
 export { decodeXml, encodeXml } from "@engine/xml";
@@ -356,10 +358,21 @@ async function redactPlainText(buffer: ArrayBuffer, anonymize: Anonymize): Promi
  * detection-only (still shows PII + enables restore). Routed by extension. `anonymize` is injected so
  * files pick up NER names once the model is loaded (defaults to deterministic-only).
  */
+/** Scan-track wiring (Stage 5). `scanOcr` gates OCR redaction of a scanned PDF (default OFF — the App
+ * reads the runtime flag and passes it); `ocr`/`detect` are injectable for model-free tests; `onProgress`
+ * drives the slow-OCR UI. When off, a scanned PDF hits redactPdf's NO_TEXT_LAYER refusal as before. */
+export interface RedactOptions {
+  readonly scanOcr?: boolean;
+  readonly ocr?: ScanOcr;
+  readonly detect?: ScanDetect;
+  readonly onProgress?: ScanProgress;
+}
+
 export async function redactFile(
   fileName: string,
   buffer: ArrayBuffer,
   anonymize: Anonymize = anonymizeDeterministic,
+  options: RedactOptions = {},
 ): Promise<FileRedaction> {
   const ext = fileName.toLowerCase().split(".").pop() ?? "";
   switch (ext) {
@@ -371,9 +384,14 @@ export async function redactFile(
     case "csv":
       return redactPlainText(buffer, anonymize);
     case "pdf": {
-      // Overlay redaction on the original PDF (true removal + self-verify). Lazy import so mupdf loads
-      // only when a PDF is actually processed (P0I-02) and to break the officeRedact↔pdfRedact cycle.
-      const { redactPdf } = await import("./pdfRedact");
+      // Route text-vs-scan (Stage 5): a scanned (image-only) PDF goes to the OCR redaction path ONLY when
+      // the scan flag is on; otherwise redactPdf handles text and refuses scans via NO_TEXT_LAYER (kept as
+      // a backstop). Lazy imports so mupdf/tesseract load only when a PDF is actually processed (P0I-02).
+      const { redactPdf, isScannedPdf } = await import("./pdfRedact");
+      if (options.scanOcr && (await isScannedPdf(buffer))) {
+        const { redactScan } = await import("./scanRedact");
+        return redactScan(buffer, anonymize, options.ocr, options.detect, options.onProgress);
+      }
       return redactPdf(buffer, anonymize);
     }
     default:
