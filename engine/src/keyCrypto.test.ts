@@ -1,6 +1,26 @@
-import { describe, expect, it } from "vitest";
-import { decryptKeyRows, encryptKeyRows, isEncryptedKeyFile } from "./keyCrypto";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { decryptKeyRows, encryptKeyRows, isEncryptedKeyFile, INVALID_KEY_FILE } from "./keyCrypto";
+import type { EncryptedKeyFile } from "./keyCrypto";
 import type { KeyRow } from "./types";
+
+/** base64 of `n` zero bytes — a well-formed base64 string that decodes to the wrong length. */
+function base64Bytes(n: number): string {
+  let binary = "";
+  for (let i = 0; i < n; i += 1) {
+    binary += "\0";
+  }
+  return btoa(binary);
+}
+
+/** A valid envelope to mutate into malformed cases. */
+async function validEnvelope(): Promise<EncryptedKeyFile> {
+  return encryptKeyRows([{ placeholder: "[ת״ז_1]", original: "123456709", type: "ISRAELI_ID" }], "pw");
+}
+
+/** Cast a mutated object to the envelope type for the untrusted-input tests. */
+function asEnvelope(value: unknown): EncryptedKeyFile {
+  return value as EncryptedKeyFile;
+}
 
 const ROWS: KeyRow[] = [
   { placeholder: "[ת״ז_1]", original: "123456709", type: "ISRAELI_ID" },
@@ -39,5 +59,66 @@ describe("keyCrypto", () => {
     expect(isEncryptedKeyFile({ version: "key.v1", rows: [] })).toBe(false);
     expect(isEncryptedKeyFile(null)).toBe(false);
     expect(isEncryptedKeyFile("nope")).toBe(false);
+  });
+});
+
+describe("keyCrypto — untrusted-envelope hardening (M2)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("refuses a DoS iteration count WITHOUT ever calling deriveKey (no freeze)", async () => {
+    const env = asEnvelope({ ...(await validEnvelope()), kdf: { ...(await validEnvelope()).kdf, iterations: 2_000_000_000 } });
+    const spy = vi.spyOn(crypto.subtle, "deriveKey");
+    await expect(decryptKeyRows(env, "pw")).rejects.toThrow(INVALID_KEY_FILE);
+    expect(spy).toHaveBeenCalledTimes(0); // the real proof the tab cannot freeze
+  });
+
+  it("rejects non-integer / out-of-type iteration values", async () => {
+    const base = await validEnvelope();
+    for (const bad of [0, -1, 1.5, Number.NaN, "600000"]) {
+      const env = asEnvelope({ ...base, kdf: { ...base.kdf, iterations: bad } });
+      await expect(decryptKeyRows(env, "pw")).rejects.toThrow(INVALID_KEY_FILE);
+    }
+  });
+
+  it("rejects a missing/empty salt, nonce, or ciphertext, wrong algo, or missing kdf", async () => {
+    const base = await validEnvelope();
+    const cases = [
+      { ...base, kdf: { ...base.kdf, salt: "" } },
+      { ...base, nonce: "" },
+      { ...base, ciphertext: "" },
+      { ...base, kdf: { ...base.kdf, algo: "MD5" } },
+      { version: base.version, nonce: base.nonce, ciphertext: base.ciphertext }, // no kdf
+    ];
+    for (const bad of cases) {
+      await expect(decryptKeyRows(asEnvelope(bad), "pw")).rejects.toThrow(INVALID_KEY_FILE);
+    }
+  });
+
+  it("rejects a salt/nonce that decode to the wrong byte length", async () => {
+    const base = await validEnvelope();
+    const shortSalt = asEnvelope({ ...base, kdf: { ...base.kdf, salt: base64Bytes(8) } }); // want 16
+    const shortNonce = asEnvelope({ ...base, nonce: base64Bytes(6) }); // want 12
+    await expect(decryptKeyRows(shortSalt, "pw")).rejects.toThrow(INVALID_KEY_FILE);
+    await expect(decryptKeyRows(shortNonce, "pw")).rejects.toThrow(INVALID_KEY_FILE);
+  });
+
+  it("isEncryptedKeyFile: true for a well-formed envelope, false for each malformed case", async () => {
+    const base = await validEnvelope();
+    expect(isEncryptedKeyFile(base)).toBe(true);
+    expect(isEncryptedKeyFile({ ...base, kdf: { ...base.kdf, iterations: 2_000_000_000 } })).toBe(false);
+    expect(isEncryptedKeyFile({ ...base, kdf: { ...base.kdf, iterations: "600000" } })).toBe(false);
+    expect(isEncryptedKeyFile({ ...base, nonce: "" })).toBe(false);
+    expect(isEncryptedKeyFile({ version: "key.v1" })).toBe(false);
+  });
+
+  it("accepts the iteration boundaries and rejects just outside them", async () => {
+    const base = await validEnvelope();
+    const withIter = (n: number) => ({ ...base, kdf: { ...base.kdf, iterations: n } });
+    expect(isEncryptedKeyFile(withIter(100_000))).toBe(true);
+    expect(isEncryptedKeyFile(withIter(10_000_000))).toBe(true);
+    expect(isEncryptedKeyFile(withIter(99_999))).toBe(false);
+    expect(isEncryptedKeyFile(withIter(10_000_001))).toBe(false);
   });
 });
