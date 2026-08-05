@@ -21,6 +21,8 @@ export default tseslint.config(
       "_*.mjs",
       // Node build-time tooling for test fixtures (uses node globals), not shipped product code.
       "web/test-fixtures/**/*.mjs",
+      // Node build/setup scripts (vendor assets, uses node globals), not shipped product code.
+      "scripts/**/*.mjs",
     ],
   },
   js.configs.recommended,
