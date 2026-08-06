@@ -138,6 +138,7 @@ export const he = {
     badge: {
       count: "{{count}} בקשות רשת",
       model: "מודל: {{count}}",
+      modelLoaded: "מנוע השמות נטען, נשמר במטמון",
       unexpected: "בקשת רשת לא צפויה אל {{host}}",
     },
     heading: "שמירה על פרטיות",
