@@ -117,24 +117,42 @@ const WORD_RUN = /[0-9A-Za-z֐-׿]+(?:[.\-/'’׳״][0-9A-Za-z֐-׿]+)*/g;
 function renderInteractive(
   text: string,
   manualTokenToTerm: ReadonlyMap<string, string>,
+  autoTokenToOriginal: ReadonlyMap<string, string>,
   onPick: (word: string) => void,
   onUndo: (term: string) => void,
+  onReveal: (value: string) => void,
   pickTitle: string,
   undoTitle: string,
+  revealTitle: string,
 ): ReactNode[] {
   const nodes: ReactNode[] = [];
   let key = 0;
   for (const part of text.split(TOKEN_SPLIT)) {
     if (IS_TOKEN.test(part)) {
-      const term = manualTokenToTerm.get(part);
-      if (term !== undefined) {
+      const manualTerm = manualTokenToTerm.get(part);
+      const autoValue = autoTokenToOriginal.get(part);
+      if (manualTerm !== undefined) {
+        // A manual pick — click to UNDO (remove the term).
         nodes.push(
           <button
             key={key++}
             type="button"
             title={undoTitle}
-            onClick={() => onUndo(term)}
+            onClick={() => onUndo(manualTerm)}
             className="mx-0.5 rounded-md bg-amber-100 px-1.5 py-0.5 text-[0.92em] font-medium text-amber-800 transition hover:bg-amber-200"
+          >
+            {part}
+          </button>,
+        );
+      } else if (autoValue !== undefined) {
+        // An automatic detection — click to REVEAL (exclude the value, un-redact it).
+        nodes.push(
+          <button
+            key={key++}
+            type="button"
+            title={revealTitle}
+            onClick={() => onReveal(autoValue)}
+            className="mx-0.5 rounded-md bg-ink/[0.06] px-1.5 py-0.5 text-[0.92em] font-medium text-ink transition hover:bg-ink/[0.12] hover:ring-1 hover:ring-ink/20"
           >
             {part}
           </button>,
@@ -209,6 +227,11 @@ export function App() {
   // Optional custom placeholder name for a typed manual term — ASCII/Latin only (it is burned onto the
   // PDF, where Hebrew won't render), so the input sanitizes to uppercase A–Z as the user types.
   const [manualLabel, setManualLabel] = useState("");
+  // Values the user chose to REVEAL (clicked an auto-detected token to un-redact a false positive, e.g.
+  // a bank name mis-tagged as a location). A ref mirrors it so the worker-calling callbacks stay stable.
+  const [excludedTerms, setExcludedTerms] = useState<string[]>([]);
+  const excludedRef = useRef(excludedTerms);
+  excludedRef.current = excludedTerms;
   const [showManualInput, setShowManualInput] = useState(false);
   // Manual-only mode: redact ONLY the user's chosen terms — no automatic detection, no 185MB model.
   // Persisted so a user who prefers it never triggers a model load. A ref mirrors it so the many
@@ -250,10 +273,11 @@ export function App() {
     setFileError(false);
     setSource({ kind: "text", text });
     setManualTerms([]);
+    setExcludedTerms([]);
     try {
       // Manual-only: redact just the chosen terms, no model. Otherwise instant deterministic now, then
       // load NER for names (it upgrades the result when ready).
-      showResult(await getEngine().anonymizeSmart(text, [], manualOnlyRef.current));
+      showResult(await getEngine().anonymizeSmart(text, [], manualOnlyRef.current, excludedRef.current));
       if (!manualOnlyRef.current) {
         void loadNer();
       }
@@ -275,7 +299,15 @@ export function App() {
         if (!isCancelled?.()) setScanProgress(event);
       });
       try {
-        const { result, bytes } = await getEngine().redactFile(name, buffer, terms, true, onProgress);
+        const { result, bytes } = await getEngine().redactFile(
+          name,
+          buffer,
+          terms,
+          true,
+          onProgress,
+          false,
+          excludedRef.current,
+        );
         if (isCancelled?.()) return; // source changed / unmounted during the multi-second OCR
         showResult(result);
         if (bytes) {
@@ -313,6 +345,7 @@ export function App() {
       setSelfVerifyNotice(false);
       setScanNotice(null);
       setManualTerms([]);
+      setExcludedTerms([]);
       try {
         const buffer = await file.arrayBuffer();
         // Scan route (flag-gated): classify BEFORE committing the source, so a scan is marked
@@ -341,6 +374,7 @@ export function App() {
           false,
           undefined,
           manualOnlyRef.current,
+          excludedRef.current,
         );
         showResult(anonymized);
         if (bytes) {
@@ -397,7 +431,12 @@ export function App() {
           return;
         }
         if (source.kind === "text") {
-          const upgraded = await getEngine().anonymizeSmart(source.text, manualTerms);
+          const upgraded = await getEngine().anonymizeSmart(
+            source.text,
+            manualTerms,
+            false,
+            excludedRef.current,
+          );
           if (!cancelled) {
             showResult(upgraded);
           }
@@ -407,6 +446,10 @@ export function App() {
           source.name,
           source.buffer,
           manualTerms,
+          false,
+          undefined,
+          false,
+          excludedRef.current,
         );
         if (cancelled) {
           return;
@@ -446,7 +489,14 @@ export function App() {
       setFileError(false);
       try {
         if (source.kind === "text") {
-          showResult(await getEngine().anonymizeSmart(source.text, terms, manualOnlyRef.current));
+          showResult(
+            await getEngine().anonymizeSmart(
+              source.text,
+              terms,
+              manualOnlyRef.current,
+              excludedRef.current,
+            ),
+          );
         } else {
           const { result, bytes } = await getEngine().redactFile(
             source.name,
@@ -455,6 +505,7 @@ export function App() {
             false,
             undefined,
             manualOnlyRef.current,
+            excludedRef.current,
           );
           showResult(result);
           if (bytes) {
@@ -527,18 +578,33 @@ export function App() {
     [manualTerms, reprocessManual],
   );
 
-  // Which visible tokens came from a MANUAL pick — those are the ones a click can UNDO (auto-detected
-  // PII tokens are left static so a stray click can't un-redact real identifiers).
-  const manualTokenToTerm = useMemo(() => {
-    const map = new Map<string, string>();
+  // Reveal (un-redact) an AUTO-detected value the user judged a false positive — add it to the exclusion
+  // list and re-run, so detection no longer grabs it. Its original text reappears (clickable again, so a
+  // real miss can be re-redacted by clicking the word).
+  const onUnredactAuto = useCallback(
+    (value: string) => {
+      if (excludedRef.current.includes(value)) {
+        return;
+      }
+      const next = [...excludedRef.current, value];
+      excludedRef.current = next;
+      setExcludedTerms(next);
+      void reprocessManual(manualTerms);
+    },
+    [manualTerms, reprocessManual],
+  );
+
+  // Token → original value, split by source: MANUAL tokens a click UNDOES (removes the term); AUTO
+  // tokens a click REVEALS (excludes the value). Every visible token is one or the other.
+  const { manualTokenToTerm, autoTokenToOriginal } = useMemo(() => {
+    const manual = new Map<string, string>();
+    const auto = new Map<string, string>();
     if (result) {
       for (const row of result.key) {
-        if (row.type === "MANUAL") {
-          map.set(row.placeholder, row.original);
-        }
+        (row.type === "MANUAL" ? manual : auto).set(row.placeholder, row.original);
       }
     }
-    return map;
+    return { manualTokenToTerm: manual, autoTokenToOriginal: auto };
   }, [result]);
 
   // Retry loading the names model after it failed — the block is environmental (fetch/WASM), not the
@@ -1051,10 +1117,13 @@ export function App() {
               {renderInteractive(
                 result.anonymizedText,
                 manualTokenToTerm,
+                autoTokenToOriginal,
                 onPickWord,
                 onRemoveManual,
+                onUnredactAuto,
                 t("result.clickRedact"),
                 t("result.clickUndo"),
+                t("result.clickReveal"),
               )}
             </div>
             <p className="mt-2 px-2 text-xs text-zinc-400">{t("result.clickHint")}</p>

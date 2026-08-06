@@ -53,12 +53,27 @@ export function anonymizeFull(text: string, nerSpans: readonly Span[]): Anonymiz
 /**
  * Deterministic detection PLUS any caller-supplied spans (NER, and/or manual user terms), resolved
  * together and anonymized. Manual spans (PRIORITY 4) win overlaps; deterministic outranks NER.
+ *
+ * `excluded` holds surface values the user chose to REVEAL (un-redact a false-positive auto detection,
+ * e.g. a bank name mis-tagged as a location). Any AUTOMATIC span whose exact value is excluded is
+ * dropped before + after occurrence-completion, so it never re-appears. A MANUAL term is never excluded
+ * (an explicit human choice always wins).
  */
-export function anonymizeWith(text: string, extraSpans: readonly Span[]): AnonymizeResult {
-  const base = resolveOverlaps([...detectDeterministic(text), ...extraSpans]);
+export function anonymizeWith(
+  text: string,
+  extraSpans: readonly Span[],
+  excluded: readonly string[] = [],
+): AnonymizeResult {
+  const excludedSet = new Set(excluded);
+  const isExcluded = (span: Span): boolean =>
+    span.type !== "MANUAL" && excludedSet.has(text.slice(span.start, span.end));
+  const base = resolveOverlaps(
+    [...detectDeterministic(text), ...extraSpans].filter((span) => !isExcluded(span)),
+  );
   // Redact every whole-word occurrence of each confirmed value, not only the tagged ones — otherwise a
   // name NER caught in one place but missed in another (or tagged only half of) leaks the rest.
-  const resolved = resolveOverlaps([...base, ...completeOccurrences(text, base)]);
+  const completed = completeOccurrences(text, base).filter((span) => !isExcluded(span));
+  const resolved = resolveOverlaps([...base, ...completed]);
   return anonymize(text, resolved);
 }
 

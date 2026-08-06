@@ -46,6 +46,28 @@ describe("custom manual labels", () => {
   });
 });
 
+describe("anonymizeWith — excluded (reveal a false positive)", () => {
+  it("drops an automatic detection whose value the user revealed (every occurrence)", () => {
+    const text = "ת״ז 123456709 של הלקוח, שוב 123456709";
+    const result = anonymizeWith(text, [], ["123456709"]);
+    expect(result.anonymizedText).toContain("123456709"); // revealed, not redacted
+    expect(result.anonymizedText).not.toContain("[ID_"); // no ID token at all
+  });
+
+  it("keeps other detections while excluding one value", () => {
+    const text = "ת״ז 123456709, טלפון 052-1234567";
+    const result = anonymizeWith(text, [], ["123456709"]);
+    expect(result.anonymizedText).toContain("123456709"); // ID revealed
+    expect(result.anonymizedText).toContain("[PHONE_1]"); // phone still redacted
+  });
+
+  it("NEVER excludes a MANUAL term — an explicit human choice always wins", () => {
+    const text = "סוד וגם סוד";
+    const result = anonymizeWith(text, manualSpans(text, ["סוד"]), ["סוד"]);
+    expect(result.anonymizedText).toBe("[TERM_1] וגם [TERM_1]");
+  });
+});
+
 describe("anonymizeWith — manual terms", () => {
   it("redacts a manual term the detectors would miss, and it wins overlaps", () => {
     const text = "חברת פרץ ושות׳, טלפון 052-1234567";

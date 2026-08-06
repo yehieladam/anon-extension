@@ -45,7 +45,7 @@ test("PDF offline: nothing exfiltrates, and the download is blocked until names 
 
   // Deterministic detection still worked — placeholder chips render; the file is withheld, not the
   // detection. Match any placeholder token ([…_N]) to stay robust to the exact entity label.
-  await expect(page.locator("mark").filter({ hasText: /_\d+\]/ }).first()).toBeVisible();
+  await expect(page.locator("button").filter({ hasText: /_\d+\]/ }).first()).toBeVisible();
 
   // Zero-exfil: the ONLY off-host requests attempted are the allowed model hosts (all blocked).
   const unexpected = [...new Set(offHostRequests)].filter((h) => !isAllowedModelHost(h));
