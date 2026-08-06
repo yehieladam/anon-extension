@@ -77,6 +77,8 @@ export const he = {
   manual: {
     add: "+ הוספה ידנית",
     placeholder: "מילה או מספר להשחרה שהמערכת פספסה…",
+    labelPlaceholder: "שם (אנגלית)",
+    labelHint: "שם מותאם לסימון, באנגלית בלבד (למשל CLIENT ← ‏[CLIENT_1]). לא חובה — בלי שם יופיע ‎[TERM_1].",
     submit: "הוספה",
     remove: "הסרה",
   },

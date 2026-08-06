@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useTranslation } from "react-i18next";
 import * as Comlink from "comlink";
 import type { AnonymizeResult, EntityType, KeyRow } from "@engine/types";
+import type { ManualTerm } from "@engine/manual";
 import type { RestoreResult } from "@engine/restore";
 import { toKeyFile, fromKeyFile } from "@engine/key";
 import {
@@ -203,8 +204,11 @@ export function App() {
   const [restoreInput, setRestoreInput] = useState("");
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
   // Manual redaction — user-added terms the automatic detectors missed.
-  const [manualTerms, setManualTerms] = useState<string[]>([]);
+  const [manualTerms, setManualTerms] = useState<ManualTerm[]>([]);
   const [manualInput, setManualInput] = useState("");
+  // Optional custom placeholder name for a typed manual term — ASCII/Latin only (it is burned onto the
+  // PDF, where Hebrew won't render), so the input sanitizes to uppercase A–Z as the user types.
+  const [manualLabel, setManualLabel] = useState("");
   const [showManualInput, setShowManualInput] = useState(false);
   // Manual-only mode: redact ONLY the user's chosen terms — no automatic detection, no 185MB model.
   // Persisted so a user who prefers it never triggers a model load. A ref mirrors it so the many
@@ -263,7 +267,7 @@ export function App() {
   // worker; the three refusal codes map to the two-tier notice; any failure pulls the download (never
   // hand back a scan we could not fully redact + verify).
   const runScanRedaction = useCallback(
-    async (name: string, buffer: ArrayBuffer, terms: readonly string[], isCancelled?: () => boolean) => {
+    async (name: string, buffer: ArrayBuffer, terms: readonly ManualTerm[], isCancelled?: () => boolean) => {
       setStatus("reading");
       setScanNotice(null);
       setFileError(false);
@@ -428,7 +432,7 @@ export function App() {
 
   // Re-run the current source with a new set of manual terms (add/remove a hand-picked redaction).
   const reprocessManual = useCallback(
-    async (terms: string[]) => {
+    async (terms: ManualTerm[]) => {
       if (!source) {
         return;
       }
@@ -485,20 +489,23 @@ export function App() {
   }, [source, manualTerms, reprocessManual]);
 
   const onAddManual = useCallback(() => {
-    const term = manualInput.trim();
-    if (term.length === 0 || manualTerms.includes(term)) {
+    const value = manualInput.trim();
+    if (value.length === 0 || manualTerms.some((t) => t.value === value)) {
       setManualInput("");
+      setManualLabel("");
       return;
     }
-    const terms = [...manualTerms, term];
+    const label = manualLabel.trim(); // already sanitized to uppercase A–Z by the input
+    const terms = [...manualTerms, label ? { value, label } : { value }];
     setManualTerms(terms);
     setManualInput("");
+    setManualLabel("");
     void reprocessManual(terms);
-  }, [manualInput, manualTerms, reprocessManual]);
+  }, [manualInput, manualLabel, manualTerms, reprocessManual]);
 
   const onRemoveManual = useCallback(
-    (term: string) => {
-      const terms = manualTerms.filter((t) => t !== term);
+    (value: string) => {
+      const terms = manualTerms.filter((t) => t.value !== value);
       setManualTerms(terms);
       void reprocessManual(terms);
     },
@@ -509,11 +516,11 @@ export function App() {
   // occurrence). No-op if it is already redacted, so a double-click can't create a duplicate.
   const onPickWord = useCallback(
     (word: string) => {
-      const term = word.trim();
-      if (term.length === 0 || manualTerms.includes(term)) {
+      const value = word.trim();
+      if (value.length === 0 || manualTerms.some((t) => t.value === value)) {
         return;
       }
-      const terms = [...manualTerms, term];
+      const terms = [...manualTerms, { value }];
       setManualTerms(terms);
       void reprocessManual(terms);
     },
@@ -969,41 +976,62 @@ export function App() {
             {(showManualInput || manualTerms.length > 0) && (
               <div className="mb-3 rounded-2xl border border-hairline bg-surface p-3">
                 {showManualInput && (
-                  <div className="flex items-center gap-2">
-                    <input
-                      dir="rtl"
-                      value={manualInput}
-                      onChange={(event) => setManualInput(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          onAddManual();
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        dir="rtl"
+                        value={manualInput}
+                        onChange={(event) => setManualInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            onAddManual();
+                          }
+                        }}
+                        placeholder={t("manual.placeholder")}
+                        className="min-h-[40px] flex-1 rounded-xl border border-hairline bg-white px-3 text-[14px] outline-none placeholder:text-zinc-400"
+                      />
+                      <input
+                        dir="ltr"
+                        value={manualLabel}
+                        // ASCII/Latin only — sanitize to uppercase A–Z so the token renders on the PDF
+                        // and the user physically cannot enter a name that would break.
+                        onChange={(event) =>
+                          setManualLabel(event.target.value.replace(/[^A-Za-z]/g, "").toUpperCase())
                         }
-                      }}
-                      placeholder={t("manual.placeholder")}
-                      className="min-h-[40px] flex-1 rounded-xl border border-hairline bg-white px-3 text-[14px] outline-none placeholder:text-zinc-400"
-                    />
-                    <button
-                      type="button"
-                      onClick={onAddManual}
-                      disabled={manualInput.trim().length === 0}
-                      className="min-h-[40px] rounded-full bg-ink px-4 text-[14px] font-medium text-white transition hover:opacity-90 disabled:opacity-30"
-                    >
-                      {t("manual.submit")}
-                    </button>
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            onAddManual();
+                          }
+                        }}
+                        placeholder={t("manual.labelPlaceholder")}
+                        maxLength={20}
+                        className="min-h-[40px] w-28 rounded-xl border border-hairline bg-white px-3 text-[14px] uppercase outline-none placeholder:normal-case placeholder:text-zinc-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={onAddManual}
+                        disabled={manualInput.trim().length === 0}
+                        className="min-h-[40px] rounded-full bg-ink px-4 text-[14px] font-medium text-white transition hover:opacity-90 disabled:opacity-30"
+                      >
+                        {t("manual.submit")}
+                      </button>
+                    </div>
+                    <p className="px-1 text-[11px] text-zinc-400">{t("manual.labelHint")}</p>
                   </div>
                 )}
                 {manualTerms.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {manualTerms.map((term) => (
+                    {manualTerms.map((mt) => (
                       <span
-                        key={term}
+                        key={mt.value}
                         className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs text-ink"
                       >
-                        {term}
+                        {mt.label ? `${mt.value} → [${mt.label}]` : mt.value}
                         <button
                           type="button"
-                          onClick={() => onRemoveManual(term)}
+                          onClick={() => onRemoveManual(mt.value)}
                           aria-label={t("manual.remove")}
                           className="text-zinc-400 transition hover:text-ink"
                         >

@@ -17,7 +17,7 @@ import * as Comlink from "comlink";
 // (which pulls transformers.js + onnxruntime's wasm). Keeping that out of this graph is what makes
 // the deterministic path instant and lets the model lazy-load only when NER is used (P0I-02).
 import { anonymizeDeterministic, anonymizeManualOnly, anonymizeWith } from "@engine/pipeline";
-import { manualSpans } from "@engine/manual";
+import { manualSpans, type ManualInput } from "@engine/manual";
 import { restore } from "@engine/restore";
 import type { AnonymizeResult, KeyRow, Span } from "@engine/types";
 import type { RestoreResult } from "@engine/restore";
@@ -53,7 +53,7 @@ function threadCount(): number {
  */
 async function anonymizeSmart(
   text: string,
-  manualTerms: readonly string[] = [],
+  manualTerms: readonly ManualInput[] = [],
   manualOnly = false,
 ): Promise<AnonymizeResult> {
   // Manual-only: redact ONLY the user's chosen terms — skip deterministic detection AND NER (no model).
@@ -111,7 +111,7 @@ const api = {
    *  terms (no auto-detection, no model). */
   anonymizeSmart(
     text: string,
-    manualTerms: readonly string[] = [],
+    manualTerms: readonly ManualInput[] = [],
     manualOnly = false,
   ): Promise<AnonymizeResult> {
     return anonymizeSmart(text, manualTerms, manualOnly);
@@ -126,7 +126,7 @@ const api = {
   redactFile(
     fileName: string,
     buffer: ArrayBuffer,
-    manualTerms: readonly string[] = [],
+    manualTerms: readonly ManualInput[] = [],
     scanOcr = false,
     onProgress?: (event: { phase: "reading" | "verifying"; page: number; total: number }) => void,
     manualOnly = false,
