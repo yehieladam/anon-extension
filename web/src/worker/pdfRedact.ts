@@ -44,7 +44,11 @@ const NO_TEXT_LAYER_MIN_CHARS = 3;
 export async function isScannedPdf(buffer: ArrayBuffer): Promise<boolean> {
   const mupdf: any = await import("mupdf");
   const doc = mupdf.PDFDocument.openDocument(new Uint8Array(buffer), "application/pdf");
-  return mappedFromDoc(doc).text.replace(/\s/g, "").length < NO_TEXT_LAYER_MIN_CHARS;
+  try {
+    return mappedFromDoc(doc).text.replace(/\s/g, "").length < NO_TEXT_LAYER_MIN_CHARS;
+  } finally {
+    doc.destroy(); // do not leak the classification doc — the caller re-opens for the real pass
+  }
 }
 
 /** Build the mapped text from an already-open mupdf document (shared by extract + redact). */

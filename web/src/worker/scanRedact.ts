@@ -77,6 +77,7 @@ export async function redactScan(
     const pixmap = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false);
     const image = { width: pixmap.getWidth(), height: pixmap.getHeight() };
     const ocrPage = await ocr(new Uint8Array(pixmap.asPNG()));
+    pixmap.destroy(); // free the multi-MB WASM bitmap now — a multi-page scan otherwise grows the heap unboundedly
 
     // Quality gate: an unreliable page refuses the WHOLE file (never partially redact a scan we can't read).
     if (!evaluateScanQuality(ocrPage).ok) {
@@ -112,6 +113,7 @@ export async function redactScan(
 
   // Copy out of WASM memory before self-verify re-opens mupdf (asUint8Array is a live view).
   const bytes = new Uint8Array(doc.saveToBuffer(SAFE_SAVE_OPTIONS).asUint8Array());
+  doc.destroy(); // release the source document heap before the verify pass opens its own
   // Fixed-point self-verify: re-detect the OUTPUT and require it to find nothing (Stage 4).
   await selfVerifyScan(bytes, ocr, detect, redactedPages, onProgress);
   const result: AnonymizeResult = { anonymizedText: "", spans: [], key: keyRows };
@@ -143,20 +145,25 @@ export async function selfVerifyScan(
   const doc = mupdf.PDFDocument.openDocument(bytes, "application/pdf");
   const scale = OCR_RENDER_DPI / 72;
   const total: number = doc.countPages();
-  for (const pageIndex of redactedPages) {
-    onProgress?.({ phase: "verifying", page: pageIndex + 1, total });
-    const pixmap = doc.loadPage(pageIndex).toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false);
-    const ocrPage = await ocr(new Uint8Array(pixmap.asPNG()));
-    let boxCount: number;
-    try {
-      boxCount = (await detect(ocrPage)).boxes.length;
-    } catch {
-      // detect threw (e.g. SCAN_UNMAPPABLE_PII) — a PII was detected on the output → not clean.
-      throw new Error(SCAN_SELFVERIFY_FAILED);
+  try {
+    for (const pageIndex of redactedPages) {
+      onProgress?.({ phase: "verifying", page: pageIndex + 1, total });
+      const pixmap = doc.loadPage(pageIndex).toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false);
+      const ocrPage = await ocr(new Uint8Array(pixmap.asPNG()));
+      pixmap.destroy();
+      let boxCount: number;
+      try {
+        boxCount = (await detect(ocrPage)).boxes.length;
+      } catch {
+        // detect threw (e.g. SCAN_UNMAPPABLE_PII) — a PII was detected on the output → not clean.
+        throw new Error(SCAN_SELFVERIFY_FAILED);
+      }
+      if (boxCount > 0) {
+        throw new Error(SCAN_SELFVERIFY_FAILED);
+      }
     }
-    if (boxCount > 0) {
-      throw new Error(SCAN_SELFVERIFY_FAILED);
-    }
+  } finally {
+    doc.destroy();
   }
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
