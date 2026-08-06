@@ -55,13 +55,15 @@ async function anonymizeSmart(
   text: string,
   manualTerms: readonly ManualInput[] = [],
   manualOnly = false,
+  excluded: readonly string[] = [],
 ): Promise<AnonymizeResult> {
   // Manual-only: redact ONLY the user's chosen terms — skip deterministic detection AND NER (no model).
+  // No automatic detections exist to exclude, so `excluded` is irrelevant here.
   if (manualOnly) {
     return anonymizeManualOnly(text, manualTerms);
   }
   const nerSpans = ner === null ? [] : await ner.recognize(text);
-  return anonymizeWith(text, [...nerSpans, ...manualSpans(text, manualTerms)]);
+  return anonymizeWith(text, [...nerSpans, ...manualSpans(text, manualTerms)], excluded);
 }
 
 const api = {
@@ -113,8 +115,9 @@ const api = {
     text: string,
     manualTerms: readonly ManualInput[] = [],
     manualOnly = false,
+    excluded: readonly string[] = [],
   ): Promise<AnonymizeResult> {
-    return anonymizeSmart(text, manualTerms, manualOnly);
+    return anonymizeSmart(text, manualTerms, manualOnly, excluded);
   },
 
   /**
@@ -130,11 +133,14 @@ const api = {
     scanOcr = false,
     onProgress?: (event: { phase: "reading" | "verifying"; page: number; total: number }) => void,
     manualOnly = false,
+    excluded: readonly string[] = [],
   ): Promise<FileRedaction> {
-    return redactFile(fileName, buffer, (text) => anonymizeSmart(text, manualTerms, manualOnly), {
-      scanOcr,
-      onProgress,
-    });
+    return redactFile(
+      fileName,
+      buffer,
+      (text) => anonymizeSmart(text, manualTerms, manualOnly, excluded),
+      { scanOcr, onProgress },
+    );
   },
 
   /** Classify a PDF as text-layer vs scanned image (Stage 5) so the App can defer a scan until NER-ready

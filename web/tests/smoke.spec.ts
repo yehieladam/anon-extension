@@ -14,7 +14,7 @@ test("app loads, is cross-origin isolated, and the worker anonymizes", async ({ 
   await page.getByRole("button", { name: "השחרת המסמך" }).click();
 
   // The deterministic path is instant — a phone placeholder must appear without any model load.
-  await expect(page.locator("mark", { hasText: "PHONE" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "[PHONE_1]", exact: true })).toBeVisible({ timeout: 15_000 });
 
   // Trust badge: the main network counter stays a true zero on the deterministic path.
   await expect(page.locator("header")).toContainText("0 בקשות רשת");

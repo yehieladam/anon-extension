@@ -56,7 +56,7 @@ test("restore: paste → redact (in-memory key) → restore brings the originals
   await page.goto("/");
   await page.fill("textarea", `לקוח בטלפון ${PHONE} ותעודת זהות ${ID}`);
   await page.getByRole("button", { name: "השחרת המסמך" }).click();
-  await expect(page.locator("mark", { hasText: "PHONE" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "[PHONE_1]", exact: true })).toBeVisible({ timeout: 15_000 });
 
   // Open the restore panel (its textarea is pre-filled with the anonymized text; the in-memory key from
   // the redaction above is active) and restore. The originals appear only in the restored-text panel.
@@ -86,13 +86,12 @@ test("manual-only: redacts only the chosen term, leaves auto PII, never loads th
   await page.fill("input[placeholder^='מילה או מספר']", "דוד כהן");
   await page.getByRole("button", { name: "הוספה", exact: true }).click();
 
-  // The chosen term is tokenized ([TERM_1]); the valid ID is LEFT ALONE (no automatic detection).
   // The chosen term is a manual token; the valid ID renders as a plain clickable word (not redacted).
   await expect(page.getByRole("button", { name: "[TERM_1]", exact: true })).toBeVisible({
     timeout: 10_000,
   });
   await expect(page.getByRole("button", { name: ID, exact: true })).toBeVisible(); // raw ID survives
-  await expect(page.locator("mark")).toHaveCount(0); // no AUTO-detected token (mark = auto)
+  await expect(page.locator("button").filter({ hasText: /\[ID_/ })).toHaveCount(0); // ID not auto-detected
   expect(modelRequests).toEqual([]); // and the 185MB model was never requested
 });
 
@@ -137,6 +136,21 @@ test("custom name: a named manual term emits [CLIENT_1]; the label input blocks 
     timeout: 10_000,
   });
   await expect(page.getByRole("button", { name: "[TERM_1]", exact: true })).toHaveCount(0);
+});
+
+test("reveal: click an auto-detected token to un-redact a false positive", async ({ page }) => {
+  await page.goto("/");
+  await page.fill("textarea", "מספר לקוח 123456709 בתיק"); // ID auto-detected (deterministic, no model)
+  await page.getByRole("button", { name: "השחרת המסמך" }).click();
+
+  const idToken = page.getByRole("button", { name: "[ID_1]", exact: true });
+  await expect(idToken).toBeVisible({ timeout: 15_000 });
+  await idToken.click(); // reveal → exclude the value
+
+  await expect(page.getByRole("button", { name: "123456709", exact: true })).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(page.getByRole("button", { name: "[ID_1]", exact: true })).toHaveCount(0);
 });
 
 test("@model docx + xlsx: redact in place and download a file without the originals", async ({
