@@ -24,7 +24,7 @@ export type DeterministicEntityType =
 export type ManualEntityType = "MANUAL";
 
 /** Scan-only (OCR) types. A generic number the scan digit-run relax (mechanism B) covers when it is
- * not a validated ID/phone — tokenized `[מספר_N]`, restorable to the OCR-read digits. Never produced by
+ * not a validated ID/phone — tokenized `[NUM_N]`, restorable to the OCR-read digits. Never produced by
  * the digital-text recognizers (regex+checksum), only by the scan path. */
 export type ScanEntityType = "IL_NUMBER";
 
@@ -74,7 +74,7 @@ export interface Recognizer {
 
 /** One row of the reversible key (CSV) — same value maps to the same placeholder per document. */
 export interface KeyRow {
-  readonly placeholder: string; // e.g. [ת"ז_1]
+  readonly placeholder: string; // e.g. [ID_1]
   readonly original: string; // the surface value that was replaced
   readonly type: EntityType;
   /** Fidelity of `original` on the SCAN path (absent on the digital-text path, where it is exact):

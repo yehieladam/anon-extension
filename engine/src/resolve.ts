@@ -29,7 +29,7 @@ function byStrength(a: Span, b: Span): number {
   }
   // A checksum-validated ISRAELI_ID beats a format-only IL_PHONE on the SAME span (a 9-digit ID that is
   // also landline-shaped). The Luhn checksum is stronger evidence than a numbering-plan coincidence, so
-  // the value is labeled [ת״ז_N] not [טלפון_N]. Pairwise + targeted — does not touch the PRIORITY map or
+  // the value is labeled [ID_N] not [PHONE_N]. Pairwise + targeted — does not touch the PRIORITY map or
   // any other type pair (e.g. the ID vs IL_COMPANY tiebreak stays lexicographic).
   if (a.type === "ISRAELI_ID" && b.type === "IL_PHONE") return -1;
   if (a.type === "IL_PHONE" && b.type === "ISRAELI_ID") return 1;

@@ -1,6 +1,6 @@
 /**
  * Restore a FILE — the reverse of redaction. The user redacts a document, an AI tool works on the
- * redacted file and returns a new one that still carries the placeholders ([שם_1] …), and here we put
+ * redacted file and returns a new one that still carries the placeholders ([NAME_1] …), and here we put
  * the ORIGINAL values back IN PLACE, preserving the format, so the user can download the reconstructed
  * document. The mapping lives only in the restore key — without it, nothing can be rebuilt.
  *

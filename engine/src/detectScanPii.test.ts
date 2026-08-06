@@ -164,47 +164,47 @@ describe("detectScanPii — Stage 6 tokenized text (AI-usable, consistent with p
     expect(text).not.toContain("123456709"); // A valid ID gone
     expect(text).not.toContain("פוווווווו"); // C garbled value gone
     expect(text).not.toContain("01012024"); // B digit-run (over-redacted date) gone
-    expect(text).toContain("[ת״ז_"); // typed tokens present
-    expect(text).toContain("[מספר_"); // B generic-number token present
+    expect(text).toContain("[ID_"); // typed tokens present
+    expect(text).toContain("[NUM_"); // B generic-number token present
     expect(scanTextLeaks(text, key)).toHaveLength(0); // no validated original survives
   });
 
   it("2. unified per-type numbering + one key across mechanisms", async () => {
     const words = [...lineAt(0, "תעודת", "זהות", "123456709"), ...lineAt(40, "טלפון", "0521234567")];
     const { text, key } = await tokenizeScan(pageOf(words), anonymizeDeterministic);
-    expect(text).toContain("[ת״ז_1]");
-    expect(text).toContain("[טלפון_1]");
-    expect(key.some((r) => r.placeholder === "[ת״ז_1]")).toBe(true);
-    expect(key.some((r) => r.placeholder === "[טלפון_1]")).toBe(true);
+    expect(text).toContain("[ID_1]");
+    expect(text).toContain("[PHONE_1]");
+    expect(key.some((r) => r.placeholder === "[ID_1]")).toBe(true);
+    expect(key.some((r) => r.placeholder === "[PHONE_1]")).toBe(true);
   });
 
   it("3. a value caught by BOTH A (validated) and C (labeled) is ONE token, not two", async () => {
     // "תעודת זהות 123456709": A validates the ID, C anchors label+value. Overlap resolves to one span.
     const words = line("תעודת", "זהות", "123456709");
     const { text } = await tokenizeScan(pageOf(words), anonymizeDeterministic);
-    expect((text.match(/\[ת״ז_\d+\]/g) ?? []).length).toBe(1);
+    expect((text.match(/\[ID_\d+\]/g) ?? []).length).toBe(1);
     expect(text).not.toContain("123456709");
   });
 
   it("5. an unreadable labeled value keeps a typed token but the key row is flagged unreadable", async () => {
     const words = line("תעודת", "זהות", "פוווווווו"); // label + garbled (no digits)
     const { text, key } = await tokenizeScan(pageOf(words), NOOP);
-    expect(text).toContain("[ת״ז_1]");
-    const row = key.find((r) => r.placeholder === "[ת״ז_1]");
+    expect(text).toContain("[ID_1]");
+    const row = key.find((r) => r.placeholder === "[ID_1]");
     expect(row?.source).toBe("unreadable"); // never a silent wrong restore
   });
 
   it("6. a B generic-number token round-trips via restore to the OCR-read digits", async () => {
-    const words = line("סכום", "87654321"); // unlabeled 8-digit run -> [מספר_1]
+    const words = line("סכום", "87654321"); // unlabeled 8-digit run -> [NUM_1]
     const { text, key } = await tokenizeScan(pageOf(words), NOOP);
-    expect(text).toContain("[מספר_1]");
+    expect(text).toContain("[NUM_1]");
     expect(restore(text, key).restoredText).toContain("87654321"); // round-trips
   });
 
   it("7. text self-verify catches a validated original left un-tokenized (a tokenization bug)", () => {
-    // A key says [ת״ז_1]->123456709 (validated) but the text still contains the raw ID -> a leak.
-    const leaks = scanTextLeaks("שם [שם_1] ת״ז 123456709", [
-      { placeholder: "[ת״ז_1]", original: "123456709", type: "ISRAELI_ID", source: "validated" },
+    // A key says [ID_1]->123456709 (validated) but the text still contains the raw ID -> a leak.
+    const leaks = scanTextLeaks("שם [NAME_1] ת״ז 123456709", [
+      { placeholder: "[ID_1]", original: "123456709", type: "ISRAELI_ID", source: "validated" },
     ]);
     expect(leaks).toContain("123456709");
   });
@@ -219,8 +219,8 @@ describe("scan tokenize — multi-page coherence (redactScan concatenation logic
     const shift = p1.text.length + 2;
     const spans = [...p1.spans, ...p2.spans.map((s) => ({ ...s, start: s.start + shift, end: s.end + shift }))];
     const t = tokenize(combined, spans);
-    // one phone value across both pages -> a single [טלפון_1], one key row.
-    expect((t.anonymizedText.match(/\[טלפון_1\]/g) ?? []).length).toBe(2);
+    // one phone value across both pages -> a single [PHONE_1], one key row.
+    expect((t.anonymizedText.match(/\[PHONE_1\]/g) ?? []).length).toBe(2);
     expect(t.key.filter((r) => r.type === "IL_PHONE")).toHaveLength(1);
     expect(t.anonymizedText).not.toContain("0521234567");
   });

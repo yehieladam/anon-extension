@@ -14,7 +14,7 @@ function parts(entries: Record<string, string>): Map<string, string> {
 
 describe("officeLeakScan", () => {
   it("1. passes when no needle appears in any part", () => {
-    const result = officeLeakScan(parts({ "word/document.xml": "<w:t>[ת״ז_1]</w:t>" }), [ID]);
+    const result = officeLeakScan(parts({ "word/document.xml": "<w:t>[ID_1]</w:t>" }), [ID]);
     expect(result.pass).toBe(true);
     expect(result.hits).toEqual([]);
   });
@@ -22,7 +22,7 @@ describe("officeLeakScan", () => {
   it("2. fails when a needle survives verbatim in a metadata part", () => {
     const result = officeLeakScan(
       parts({
-        "word/document.xml": "<w:t>[ת״ז_1]</w:t>",
+        "word/document.xml": "<w:t>[ID_1]</w:t>",
         "docProps/core.xml": `<dc:creator>${ID}</dc:creator>`,
       }),
       [ID],

@@ -32,7 +32,7 @@ describe("redactXlsx — SheetJS-realistic numeric round-trip", () => {
 
     expect(csv).not.toContain("123456709");
     expect(csv).not.toContain("12345674");
-    expect(csv).toMatch(/\[ת״ז_\d+\]/);
+    expect(csv).toMatch(/\[ID_\d+\]/);
     // Both IDs are in the key; the leading zero is restored on the 8-digit one.
     expect(result.key.map((r) => r.original).sort()).toEqual(["012345674", "123456709"]);
     // Non-PII numbers survive.

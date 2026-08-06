@@ -4,7 +4,7 @@
  * and we swap the real values in, entirely in the browser (restore IS in the MVP — docs/tasks.md).
  *
  * TOLERANT MATCHER: an LLM or an RTL editor can mangle the placeholder TOKEN (not the value) — it
- * may smart-quote the gershayim (`[ת״ז_1]` -> `[ת"ז_1]`), inject invisible bidi controls, or add
+ * may smart-quote the gershayim (`[ID_1]` -> `[ID_1]`), inject invisible bidi controls, or add
  * spaces. We normalise both the key placeholders and the tokens found in the text before matching,
  * so those cosmetic changes don't break restore. Unmatched placeholders are reported, never
  * silently dropped.

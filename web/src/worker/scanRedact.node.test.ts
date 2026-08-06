@@ -191,7 +191,7 @@ run("scan redaction reality — real image-only scan", () => {
     expect(text).not.toContain("123456709"); // ID gone too (deterministic + digit-relax)
     // Stage 6 — AI-usable text channel: tokenized, no raw PII, restores.
     const ai = result.anonymizedText;
-    expect(ai).toMatch(/\[ת״ז_\d+\]/); // ID token present
+    expect(ai).toMatch(/\[ID_\d+\]/); // ID token present
     expect(ai).toMatch(/\[(שם|טלפון)_\d+\]/); // name/phone token present
     expect(ai).not.toContain("123456709"); // no raw ID in the AI text
     expect(ai).not.toContain("0521234567"); // no raw phone digits in the AI text

@@ -69,9 +69,9 @@ describe("redactDocx", () => {
     const document = await out.file("word/document.xml")!.async("string");
 
     // PII replaced with the Hebrew placeholders...
-    expect(document).toContain("[טלפון_1]");
-    expect(document).toContain("[ת״ז_1]");
-    expect(document).toContain("[אימייל_1]");
+    expect(document).toContain("[PHONE_1]");
+    expect(document).toContain("[ID_1]");
+    expect(document).toContain("[EMAIL_1]");
     // ...and the raw values are gone (the phone even though it was split across three runs).
     expect(document).not.toContain("1234567");
     expect(document).not.toContain("123456709");
@@ -94,7 +94,7 @@ describe("redactXlsx", () => {
     const out = await JSZip.loadAsync(bytes);
     const shared = await out.file("xl/sharedStrings.xml")!.async("string");
 
-    expect(shared).toContain("[ת״ז_1]");
+    expect(shared).toContain("[ID_1]");
     expect(shared).not.toContain("123456709");
     expect(shared).toContain("כותרת"); // untouched string stays
     expect(result.key.length).toBe(1);
@@ -120,7 +120,7 @@ describe("redactXlsx", () => {
     const out = await JSZip.loadAsync(bytes);
     const rewritten = await out.file("xl/worksheets/sheet1.xml")!.async("string");
 
-    expect(rewritten).toContain("[ת״ז_1]");
+    expect(rewritten).toContain("[ID_1]");
     expect(rewritten).not.toContain("123456709");
     expect(result.key.length).toBe(1);
   });
@@ -176,7 +176,7 @@ describe("redactOffice — metadata strip + comment routing (2b)", () => {
     // One value, one key row — coherent across body and comment.
     expect(result.key.filter((r) => r.original === "123456709")).toHaveLength(1);
     const out = await JSZip.loadAsync(bytes);
-    expect(await out.file("word/comments.xml")!.async("string")).toContain("[ת״ז_1]");
+    expect(await out.file("word/comments.xml")!.async("string")).toContain("[ID_1]");
     expect(await out.file("word/comments.xml")!.async("string")).toContain('w:author=""');
 
     // Restore brings both occurrences (body + comment) back.
@@ -195,7 +195,7 @@ describe("redactOffice — metadata strip + comment routing (2b)", () => {
     const { bytes } = await redactXlsx(await zip.generateAsync({ type: "arraybuffer" }));
     const out = await JSZip.loadAsync(bytes);
     const commentsOut = await out.file("xl/comments1.xml")!.async("string");
-    expect(commentsOut).toContain("[ת״ז_1]");
+    expect(commentsOut).toContain("[ID_1]");
     expect(commentsOut).not.toContain("123456709");
     expect(commentsOut).toContain("<author></author>"); // author blanked
   });
@@ -230,10 +230,10 @@ describe("redactXlsx — numeric cells (the silent-leak fix)", () => {
     );
     const out = await sheetOut(bytes);
     expect(out).toContain('t="inlineStr"');
-    expect(out).toContain("[ת״ז_1]");
+    expect(out).toContain("[ID_1]");
     expect(out).not.toContain("123456709");
     expect(result.key.map((r) => r.type)).toContain("ISRAELI_ID");
-    expect(restore("[ת״ז_1]", result.key).restoredText).toBe("123456709");
+    expect(restore("[ID_1]", result.key).restoredText).toBe("123456709");
   });
 
   it("2. restores the leading zero dropped by numeric storage (8-digit → valid 9-digit ID)", async () => {
@@ -243,7 +243,7 @@ describe("redactXlsx — numeric cells (the silent-leak fix)", () => {
       await buildXlsxWith(`<row r="1"><c r="A1"><v>12345674</v></c></row>`),
     );
     const out = await sheetOut(bytes);
-    expect(out).toContain("[ת״ז_1]");
+    expect(out).toContain("[ID_1]");
     expect(out).not.toContain("12345674");
     expect(result.key[0].original).toBe("012345674");
   });
@@ -258,7 +258,7 @@ describe("redactXlsx — numeric cells (the silent-leak fix)", () => {
     expect(out).toContain('<c r="A1" t="s"><v>0</v></c>');
     // …and the shared string itself is redacted.
     const sharedOut = await (await JSZip.loadAsync(bytes)).file("xl/sharedStrings.xml")!.async("string");
-    expect(sharedOut).toContain("[ת״ז_1]");
+    expect(sharedOut).toContain("[ID_1]");
     expect(sharedOut).not.toContain("123456709");
   });
 

@@ -1,7 +1,7 @@
 /**
  * Build a minimal, valid .docx from tokenized text — the "Word for AI" output. A redacted PDF is a
  * visual redaction (true removal, black boxes) with no placeholder tokens, so it can't be pasted into
- * an LLM and restored later. This wraps the anonymized text (which already carries [ת״ז_1] … tokens
+ * an LLM and restored later. This wraps the anonymized text (which already carries [ID_1] … tokens
  * and a coherent restore key) in a plain Word document: the LLM can work with the tokens, and the
  * result restores through the existing docx restore-file path. Layout/logo are intentionally dropped —
  * this output is for the AI round-trip, not for archiving (the redacted PDF is that).

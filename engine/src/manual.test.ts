@@ -20,9 +20,9 @@ describe("anonymizeWith — manual terms", () => {
   it("redacts a manual term the detectors would miss, and it wins overlaps", () => {
     const text = "חברת פרץ ושות׳, טלפון 052-1234567";
     const result = anonymizeWith(text, manualSpans(text, ["פרץ ושות׳"]));
-    expect(result.anonymizedText).toContain("[ידני_1]");
+    expect(result.anonymizedText).toContain("[TERM_1]");
     expect(result.anonymizedText).not.toContain("פרץ ושות׳");
-    expect(result.anonymizedText).toContain("[טלפון_1]"); // deterministic still works alongside
+    expect(result.anonymizedText).toContain("[PHONE_1]"); // deterministic still works alongside
     // the key round-trips the manual value for restore
     expect(result.key.some((r) => r.type === "MANUAL" && r.original === "פרץ ושות׳")).toBe(true);
   });

@@ -29,7 +29,7 @@ describe("restoreFile — docx round-trip", () => {
     // Sanity: the redacted docx holds placeholders, not the originals.
     const redactedDoc = await JSZip.loadAsync(redacted);
     const redactedXml = await redactedDoc.file("word/document.xml")!.async("string");
-    expect(redactedXml).toContain("[ת״ז_1]");
+    expect(redactedXml).toContain("[ID_1]");
     expect(redactedXml).not.toContain("123456709");
 
     // Restore the redacted file with its key.
@@ -39,8 +39,8 @@ describe("restoreFile — docx round-trip", () => {
 
     expect(restoredXml).toContain("123456709");
     expect(restoredXml).toContain("052-1234567");
-    expect(restoredXml).not.toContain("[ת״ז_1]");
-    expect(restoredXml).not.toContain("[טלפון_1]");
+    expect(restoredXml).not.toContain("[ID_1]");
+    expect(restoredXml).not.toContain("[PHONE_1]");
     expect(restored.unmatched).toHaveLength(0);
   });
 

@@ -4,7 +4,7 @@
  * history, DMS custom properties, comment authors. These are data ABOUT the document, so a placeholder
  * is meaningless: we BLANK them. Comment BODY text is different — it is authored prose that can hold a
  * client name also in the body, so it is routed through the same detection pass in officeRedact (not
- * here), producing a coherent [שם_N] that restores.
+ * here), producing a coherent [NAME_N] that restores.
  *
  * We blank inner text / attribute values and never delete the element itself — an empty element
  * (`<dc:creator></dc:creator>`) is schema-valid, deleting it may not be. Blanking custom string

@@ -77,8 +77,8 @@ test("@model docx + xlsx: redact in place and download a file without the origin
     buffer: await buildDocx(),
   });
   const docXml = await (await JSZip.loadAsync(docxBytes)).file("word/document.xml")!.async("string");
-  expect(docXml).toContain("[טלפון_1]");
-  expect(docXml).toContain("[ת״ז_1]");
+  expect(docXml).toContain("[PHONE_1]");
+  expect(docXml).toContain("[ID_1]");
   expect(docXml).not.toContain(PHONE);
   expect(docXml).not.toContain(ID);
 
@@ -91,6 +91,6 @@ test("@model docx + xlsx: redact in place and download a file without the origin
   const sharedStrings = await (await JSZip.loadAsync(xlsxBytes))
     .file("xl/sharedStrings.xml")!
     .async("string");
-  expect(sharedStrings).toContain("[טלפון_1]");
+  expect(sharedStrings).toContain("[PHONE_1]");
   expect(sharedStrings).not.toContain(PHONE);
 });
