@@ -87,11 +87,33 @@ test("manual-only: redacts only the chosen term, leaves auto PII, never loads th
   await page.getByRole("button", { name: "הוספה", exact: true }).click();
 
   // The chosen term is tokenized ([TERM_1]); the valid ID is LEFT ALONE (no automatic detection).
-  await expect(page.locator("mark", { hasText: "TERM" })).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText(`ותעודת זהות ${ID}`, { exact: true })).toBeVisible(); // raw ID survives
-  await expect(page.locator("mark", { hasText: "ID_" })).toHaveCount(0); // ID was NOT auto-detected
+  // The chosen term is a manual token; the valid ID renders as a plain clickable word (not redacted).
+  await expect(page.getByRole("button", { name: "[TERM_1]", exact: true })).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(page.getByRole("button", { name: ID, exact: true })).toBeVisible(); // raw ID survives
+  await expect(page.locator("mark")).toHaveCount(0); // no AUTO-detected token (mark = auto)
   expect(modelRequests).toEqual([]); // and the 185MB model was never requested
+});
 
+test("click-to-redact: click a word to redact it, click the token to undo (manual-only, no model)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("checkbox").first().check(); // manual-only → model-free, everything clickable
+  await page.fill("textarea", "דוד כהן גר בעיר");
+  await page.getByRole("button", { name: "השחרת המסמך" }).click();
+
+  // The preview renders each word as a clickable button. Click one to redact it everywhere.
+  await page.getByRole("button", { name: "כהן", exact: true }).click();
+  const token = page.getByRole("button", { name: "[TERM_1]", exact: true });
+  await expect(token).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("button", { name: "כהן", exact: true })).toHaveCount(0);
+
+  // Click the (amber) manual token to UNDO — the word comes back, the token is gone.
+  await token.click();
+  await expect(page.getByRole("button", { name: "כהן", exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("button", { name: "[TERM_1]", exact: true })).toHaveCount(0);
 });
 
 test("@model docx + xlsx: redact in place and download a file without the originals", async ({
