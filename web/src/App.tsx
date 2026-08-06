@@ -275,6 +275,7 @@ export function App() {
     setFileError(false);
     setSource({ kind: "text", text });
     setManualTerms([]);
+    excludedRef.current = []; // clear the ref synchronously — the call below reads it this tick
     setExcludedTerms([]);
     try {
       // Manual-only: redact just the chosen terms, no model. Otherwise instant deterministic now, then
@@ -347,6 +348,7 @@ export function App() {
       setSelfVerifyNotice(false);
       setScanNotice(null);
       setManualTerms([]);
+      excludedRef.current = []; // clear the ref synchronously — the redactFile calls below read it this tick
       setExcludedTerms([]);
       try {
         const buffer = await file.arrayBuffer();

@@ -138,6 +138,26 @@ test("custom name: a named manual term emits [CLIENT_1]; the label input blocks 
   await expect(page.getByRole("button", { name: "[TERM_1]", exact: true })).toHaveCount(0);
 });
 
+test("exclusions reset per document: a value revealed in doc A is redacted again in doc B", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.fill("textarea", "מספר 123456709 בתיק"); // ID auto-detected
+  await page.getByRole("button", { name: "השחרת המסמך" }).click();
+  await page.getByRole("button", { name: "[ID_1]", exact: true }).click(); // reveal it in doc A
+  await expect(page.getByRole("button", { name: "123456709", exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // A NEW document containing the same value must NOT inherit the exclusion.
+  await page.fill("textarea", "מסמך חדש עם 123456709");
+  await page.getByRole("button", { name: "השחרת המסמך" }).click();
+  await expect(page.getByRole("button", { name: "[ID_1]", exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByRole("button", { name: "123456709", exact: true })).toHaveCount(0);
+});
+
 test("word/number split: a house number is a separate clickable unit from the street name", async ({
   page,
 }) => {
