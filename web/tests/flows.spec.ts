@@ -56,7 +56,7 @@ test("restore: paste → redact (in-memory key) → restore brings the originals
   await page.goto("/");
   await page.fill("textarea", `לקוח בטלפון ${PHONE} ותעודת זהות ${ID}`);
   await page.getByRole("button", { name: "השחרת המסמך" }).click();
-  await expect(page.locator("mark", { hasText: "טלפון" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("mark", { hasText: "PHONE" })).toBeVisible({ timeout: 15_000 });
 
   // Open the restore panel (its textarea is pre-filled with the anonymized text; the in-memory key from
   // the redaction above is active) and restore. The originals appear only in the restored-text panel.

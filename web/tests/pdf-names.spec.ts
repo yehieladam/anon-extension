@@ -35,7 +35,7 @@ test("@model redacts the Hebrew name in a PDF and never uploads the file", async
   // the placeholder name "ישראל ישראלי" as LOCATION (מקום) — "ישראל" is also the country — not PERSON;
   // the label is the model's call, what matters is that the name is redacted (asserted on the file
   // below). So we wait for either a name (שם) or place (מקום) chip, not specifically שם.
-  await expect(page.locator("mark").filter({ hasText: /שם|מקום/ }).first()).toBeVisible({
+  await expect(page.locator("mark").filter({ hasText: /NAME|LOC/ }).first()).toBeVisible({
     timeout: 260_000,
   });
 
