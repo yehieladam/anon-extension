@@ -7,7 +7,6 @@ import { manualSpans } from "@engine/manual";
 import { redactPdf } from "./pdfRedact";
 const run = process.env.RUN_OCR ? describe : describe.skip;
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 async function pdfOf(lines: string[]): Promise<ArrayBuffer> {
   const { chromium } = await import("playwright");
   const b = await chromium.launch();
@@ -31,4 +30,3 @@ run("redactPdf H1 self-verify", () => {
   // The throw path (a real whole-word survivor is still caught) is pinned model-free in
   // engine/src/textLeaks.test.ts #2 — layerA is a pure function of the re-extracted text.
 });
-/* eslint-enable @typescript-eslint/no-explicit-any */
