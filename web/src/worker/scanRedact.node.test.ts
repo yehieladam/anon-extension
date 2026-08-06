@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { anonymizeDeterministic, anonymizeWith } from "@engine/pipeline";
 import { labelAnchorBoxes, detectScanPii } from "@engine/detectScanPii";
+import { restore } from "@engine/restore";
 import type { OcrPageResult, OcrWord } from "@engine/ocrTypes";
 import { redactScan, selfVerifyScan, SCAN_LOW_CONFIDENCE, SCAN_SELFVERIFY_FAILED, type ScanDetect } from "./scanRedact";
 
@@ -138,7 +139,7 @@ run("scan redaction reality — real image-only scan", () => {
     const scan = scanPdfFromPixmap(mupdf, rasterPixmap(mupdf, SOURCE, 200), 200);
     const mislocated: ScanDetect = async (page) => {
       const d = await detectScanPii(page, anonymizeDeterministic);
-      return { boxes: d.boxes.map(() => ({ x0: 0, y0: 0, x1: 1, y1: 1 })), result: d.result };
+      return { ...d, boxes: d.boxes.map(() => ({ x0: 0, y0: 0, x1: 1, y1: 1 })) };
     };
     await expect(redactScan(scan, anonymizeDeterministic, nodeOcr, mislocated)).rejects.toThrow(SCAN_SELFVERIFY_FAILED);
   }, 300_000);
@@ -156,7 +157,8 @@ run("scan redaction reality — real image-only scan", () => {
 
     const labelOnly: ScanDetect = async (page) => ({
       boxes: labelAnchorBoxes(page.words),
-      result: { anonymizedText: "", spans: [], key: [] },
+      spans: [],
+      text: "",
     });
     const { bytes } = await redactScan(scan, anonymizeDeterministic, nodeOcr, labelOnly);
     const after = (await reOcrText(bytes)).replace(/\s/g, "");
@@ -180,12 +182,21 @@ run("scan redaction reality — real image-only scan", () => {
     const anonymize = async (text: string) => anonymizeWith(text, await ner.recognize(text));
     const mupdf: any = await import("mupdf");
     const scan = scanPdfFromPixmap(mupdf, rasterPixmap(mupdf, SOURCE, 200), 200);
-    const { bytes } = await redactScan(scan, anonymize, nodeOcr);
+    const { bytes, result } = await redactScan(scan, anonymize, nodeOcr);
     const text = (await reOcrText(bytes)).replace(/\s/g, "");
     // eslint-disable-next-line no-console
-    console.log(`name-on-scan re-OCR:\n${await reOcrText(bytes)}`);
+    console.log(`name-on-scan re-OCR:\n${await reOcrText(bytes)}\n--- Word-for-AI text ---\n${result.anonymizedText}`);
+    // Image channel: PII pixels gone.
     expect(text).not.toContain("ישראל"); // the PERSON name pixels are gone (both occurrences)
     expect(text).not.toContain("123456709"); // ID gone too (deterministic + digit-relax)
+    // Stage 6 — AI-usable text channel: tokenized, no raw PII, restores.
+    const ai = result.anonymizedText;
+    expect(ai).toMatch(/\[ת״ז_\d+\]/); // ID token present
+    expect(ai).toMatch(/\[(שם|טלפון)_\d+\]/); // name/phone token present
+    expect(ai).not.toContain("123456709"); // no raw ID in the AI text
+    expect(ai).not.toContain("0521234567"); // no raw phone digits in the AI text
+    expect(result.key.some((r) => r.source === "validated")).toBe(true); // fidelity marked
+    expect(restore(ai, result.key).restoredText).toContain("123456709"); // A value round-trips
   }, 600_000);
 });
 /* eslint-enable @typescript-eslint/no-explicit-any */

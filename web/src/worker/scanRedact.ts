@@ -15,8 +15,10 @@
 import { evaluateScanQuality, SCAN_LOW_CONFIDENCE } from "@engine/scanGate";
 import { detectScanPii, type ScanDetection } from "@engine/detectScanPii";
 import { imageBoxToPageRect } from "@engine/ocrMap";
+import { anonymize as tokenize } from "@engine/anonymize";
+import { markScanKeySources, scanTextLeaks } from "@engine/scanKey";
 import type { OcrPageResult } from "@engine/ocrTypes";
-import type { AnonymizeResult, KeyRow } from "@engine/types";
+import type { AnonymizeResult, Span } from "@engine/types";
 import { sanitizeMetadata } from "./pdfSanitize";
 import { ocrImage } from "./ocr";
 import type { RedactedFile, Anonymize } from "./officeRedact";
@@ -64,7 +66,12 @@ export async function redactScan(
   const doc = mupdf.PDFDocument.openDocument(new Uint8Array(buffer), "application/pdf");
   const PDFPage = mupdf.PDFPage;
   const scale = OCR_RENDER_DPI / 72;
-  const keyRows: KeyRow[] = [];
+  // Document-level tokenization (Stage 6): accumulate each page's OCR text + its unified spans (shifted
+  // to the combined-text offset), so the "Word for AI" tokens + restore key get ONE unified numbering
+  // across pages (same value on two pages -> same token) and the AI text hides everything the pixels do.
+  const PAGE_SEP = "\n\n";
+  let combinedText = "";
+  const allSpans: Span[] = [];
 
   const redactedPages: number[] = []; // pages that actually got >=1 rect — the only ones worth re-verifying
   const pageCount: number = doc.countPages();
@@ -84,9 +91,15 @@ export async function redactScan(
       throw new Error(SCAN_LOW_CONFIDENCE);
     }
 
-    // Detect (may throw SCAN_UNMAPPABLE_PII on a standard match we cannot cover).
+    // Detect (may throw SCAN_UNMAPPABLE_PII on a span we cannot cover). Accumulate text + shifted spans
+    // for the document-level tokenize below.
     const detection = await detect(ocrPage);
-    keyRows.push(...detection.result.key);
+    const offset = combinedText.length;
+    combinedText += (offset > 0 ? PAGE_SEP : "") + detection.text;
+    const shift = offset > 0 ? offset + PAGE_SEP.length : 0;
+    for (const span of detection.spans) {
+      allSpans.push({ ...span, start: span.start + shift, end: span.end + shift });
+    }
 
     const pageBox = {
       widthPt: bounds[2] - bounds[0],
@@ -116,7 +129,16 @@ export async function redactScan(
   doc.destroy(); // release the source document heap before the verify pass opens its own
   // Fixed-point self-verify: re-detect the OUTPUT and require it to find nothing (Stage 4).
   await selfVerifyScan(bytes, ocr, detect, redactedPages, onProgress);
-  const result: AnonymizeResult = { anonymizedText: "", spans: [], key: keyRows };
+
+  // Document-level tokenization (Stage 6): the unified spans → one tokenized "Word for AI" text + one
+  // restore key with unified numbering. Mark each key row's OCR fidelity, and text self-verify (a
+  // validated original surviving in the AI text is a tokenization bug → refuse, like the pixel verify).
+  const tokenized = tokenize(combinedText, allSpans);
+  const key = markScanKeySources(tokenized.key);
+  if (scanTextLeaks(tokenized.anonymizedText, key).length > 0) {
+    throw new Error(SCAN_SELFVERIFY_FAILED);
+  }
+  const result: AnonymizeResult = { anonymizedText: tokenized.anonymizedText, spans: [], key };
   return { bytes, result };
 }
 

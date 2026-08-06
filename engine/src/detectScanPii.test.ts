@@ -7,6 +7,9 @@
 import { describe, expect, it } from "vitest";
 import { detectScanPii, SCAN_UNMAPPABLE_PII, type Anonymize } from "./detectScanPii";
 import { anonymizeDeterministic } from "./pipeline";
+import { anonymize as tokenize } from "./anonymize";
+import { markScanKeySources, scanTextLeaks } from "./scanKey";
+import { restore } from "./restore";
 import type { OcrBox, OcrPageResult, OcrWord } from "./ocrTypes";
 import type { Span } from "./types";
 
@@ -123,5 +126,102 @@ describe("detectScanPii — Stage-4 self-verify verdict basis", () => {
   it("P2. a residual valid ID re-detects to a box (verify would FAIL)", async () => {
     const { boxes } = await detectScanPii(pageOf([w("123456709", 0, 180)]), anonymizeDeterministic);
     expect(boxes.length).toBeGreaterThan(0);
+  });
+});
+
+// --- Stage 6: the unified span set drives the tokenized "Word for AI" text consistently with the pixels.
+/** Reproduce redactScan's document tokenize: detectScanPii spans -> tokenized text + fidelity-marked key. */
+async function tokenizeScan(page: OcrPageResult, anonymize: Anonymize) {
+  const { spans, text, boxes } = await detectScanPii(page, anonymize);
+  const t = tokenize(text, spans);
+  return { text: t.anonymizedText, key: markScanKeySources(t.key), boxCount: boxes.length };
+}
+/** Lay words left-to-right on one line (y 0..20) with a small gap. */
+function line(...texts: string[]): OcrWord[] {
+  return lineAt(0, ...texts);
+}
+/** Lay words on a text line at vertical band [y, y+20] — separate lines so label-anchor stays per-field. */
+function lineAt(y: number, ...texts: string[]): OcrWord[] {
+  let x = 0;
+  return texts.map((txt) => {
+    const width = Math.max(30, txt.length * 12);
+    const word = w(txt, x, x + width, y, y + 20);
+    x += width + 10;
+    return word;
+  });
+}
+
+describe("detectScanPii — Stage 6 tokenized text (AI-usable, consistent with pixels)", () => {
+  it("1. CONSISTENCY INVARIANT: every covered value (A + B + C) is tokenized — no raw PII in the text", async () => {
+    // Realistic multi-line doc: C (ID label + garbled value) on one line, A (valid ID) on the next, B
+    // (an unlabeled 8-digit date) on a third — each field its own line, as in a real form.
+    const words = [
+      ...lineAt(0, "תעודת", "זהות", "פוווווווו"),
+      ...lineAt(40, "מזהה", "123456709"),
+      ...lineAt(80, "בתאריך", "01012024"),
+    ];
+    const { text, key } = await tokenizeScan(pageOf(words), anonymizeDeterministic);
+    expect(text).not.toContain("123456709"); // A valid ID gone
+    expect(text).not.toContain("פוווווווו"); // C garbled value gone
+    expect(text).not.toContain("01012024"); // B digit-run (over-redacted date) gone
+    expect(text).toContain("[ת״ז_"); // typed tokens present
+    expect(text).toContain("[מספר_"); // B generic-number token present
+    expect(scanTextLeaks(text, key)).toHaveLength(0); // no validated original survives
+  });
+
+  it("2. unified per-type numbering + one key across mechanisms", async () => {
+    const words = [...lineAt(0, "תעודת", "זהות", "123456709"), ...lineAt(40, "טלפון", "0521234567")];
+    const { text, key } = await tokenizeScan(pageOf(words), anonymizeDeterministic);
+    expect(text).toContain("[ת״ז_1]");
+    expect(text).toContain("[טלפון_1]");
+    expect(key.some((r) => r.placeholder === "[ת״ז_1]")).toBe(true);
+    expect(key.some((r) => r.placeholder === "[טלפון_1]")).toBe(true);
+  });
+
+  it("3. a value caught by BOTH A (validated) and C (labeled) is ONE token, not two", async () => {
+    // "תעודת זהות 123456709": A validates the ID, C anchors label+value. Overlap resolves to one span.
+    const words = line("תעודת", "זהות", "123456709");
+    const { text } = await tokenizeScan(pageOf(words), anonymizeDeterministic);
+    expect((text.match(/\[ת״ז_\d+\]/g) ?? []).length).toBe(1);
+    expect(text).not.toContain("123456709");
+  });
+
+  it("5. an unreadable labeled value keeps a typed token but the key row is flagged unreadable", async () => {
+    const words = line("תעודת", "זהות", "פוווווווו"); // label + garbled (no digits)
+    const { text, key } = await tokenizeScan(pageOf(words), NOOP);
+    expect(text).toContain("[ת״ז_1]");
+    const row = key.find((r) => r.placeholder === "[ת״ז_1]");
+    expect(row?.source).toBe("unreadable"); // never a silent wrong restore
+  });
+
+  it("6. a B generic-number token round-trips via restore to the OCR-read digits", async () => {
+    const words = line("סכום", "87654321"); // unlabeled 8-digit run -> [מספר_1]
+    const { text, key } = await tokenizeScan(pageOf(words), NOOP);
+    expect(text).toContain("[מספר_1]");
+    expect(restore(text, key).restoredText).toContain("87654321"); // round-trips
+  });
+
+  it("7. text self-verify catches a validated original left un-tokenized (a tokenization bug)", () => {
+    // A key says [ת״ז_1]->123456709 (validated) but the text still contains the raw ID -> a leak.
+    const leaks = scanTextLeaks("שם [שם_1] ת״ז 123456709", [
+      { placeholder: "[ת״ז_1]", original: "123456709", type: "ISRAELI_ID", source: "validated" },
+    ]);
+    expect(leaks).toContain("123456709");
+  });
+});
+
+describe("scan tokenize — multi-page coherence (redactScan concatenation logic)", () => {
+  it("4. the same value on two pages gets the same token via the combined tokenize", async () => {
+    // Simulate redactScan: two pages, spans shifted to the combined offset, one tokenize pass.
+    const p1 = await detectScanPii(pageOf(line("טלפון", "0521234567")), anonymizeDeterministic);
+    const p2 = await detectScanPii(pageOf(line("נייד", "0521234567")), anonymizeDeterministic);
+    const combined = `${p1.text}\n\n${p2.text}`;
+    const shift = p1.text.length + 2;
+    const spans = [...p1.spans, ...p2.spans.map((s) => ({ ...s, start: s.start + shift, end: s.end + shift }))];
+    const t = tokenize(combined, spans);
+    // one phone value across both pages -> a single [טלפון_1], one key row.
+    expect((t.anonymizedText.match(/\[טלפון_1\]/g) ?? []).length).toBe(2);
+    expect(t.key.filter((r) => r.type === "IL_PHONE")).toHaveLength(1);
+    expect(t.anonymizedText).not.toContain("0521234567");
   });
 });

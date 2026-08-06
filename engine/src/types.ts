@@ -23,7 +23,12 @@ export type DeterministicEntityType =
  * explicit human choice always wins. */
 export type ManualEntityType = "MANUAL";
 
-export type EntityType = NerEntityType | DeterministicEntityType | ManualEntityType;
+/** Scan-only (OCR) types. A generic number the scan digit-run relax (mechanism B) covers when it is
+ * not a validated ID/phone — tokenized `[מספר_N]`, restorable to the OCR-read digits. Never produced by
+ * the digital-text recognizers (regex+checksum), only by the scan path. */
+export type ScanEntityType = "IL_NUMBER";
+
+export type EntityType = NerEntityType | DeterministicEntityType | ManualEntityType | ScanEntityType;
 
 /**
  * Overlap-resolution priority (port of the server's analyze.py PRIORITY map).
@@ -44,6 +49,7 @@ export const PRIORITY: Readonly<Record<EntityType, number>> = {
   PERSON: 2,
   ORGANIZATION: 1,
   LOCATION: 1,
+  IL_NUMBER: 1, // generic scan number: loses overlaps to a validated ID/phone (3) or a labeled value
 };
 
 /** A detected PII span in the analyzed text. `end` is exclusive; offsets are UTF-16 code units. */
@@ -71,6 +77,11 @@ export interface KeyRow {
   readonly placeholder: string; // e.g. [ת"ז_1]
   readonly original: string; // the surface value that was replaced
   readonly type: EntityType;
+  /** Fidelity of `original` on the SCAN path (absent on the digital-text path, where it is exact):
+   *  "validated" = checksum/format-verified (trust the restore); "ocr" = OCR-read, restorable but
+   *  OCR-quality; "unreadable" = region covered but the value could not be read (never a silent wrong
+   *  restore). The UI conveys this so scan restores are trusted per-row. */
+  readonly source?: "validated" | "ocr" | "unreadable";
 }
 
 /** Result of anonymizing a text: the rewritten text plus everything needed to restore it. */
