@@ -18,6 +18,8 @@
  * Isomorphic: uses the global `DecompressionStream` (Node 20 + browsers), never node:zlib.
  */
 
+import { occursAsWholeWord } from "./occurrences";
+
 const utf8Encoder = new TextEncoder();
 
 function reverse(text: string): string {
@@ -47,13 +49,61 @@ function utf16be(text: string): Uint8Array {
 }
 
 /**
+ * Strip format/bidi controls only, KEEPING spaces and hyphens as word boundaries. Used for the
+ * whole-word leak check on NAME/text needles: a real whole-word survivor keeps its boundaries here, while
+ * a short name that is only a substring of a longer word ("כהן" inside "מכהן") is correctly bounded by a
+ * word char and not falsely flagged. (normalizeForLeak below additionally strips spaces/hyphens — right
+ * for numeric needles that a separator could split, wrong for names because it concatenates words.)
+ */
+export function stripControls(text: string): string {
+  return text.replace(/[­‎‏‪-‮⁦-⁩]/g, "");
+}
+
+/**
  * Strip format/bidi controls and every space/hyphen variant, so "052­1234567" (soft hyphen) and
  * "052-1234567" both collapse to "0521234567" and cannot hide behind a separator.
  */
 export function normalizeForLeak(text: string): string {
-  return text
-    .replace(/[­‎‏‪-‮⁦-⁩]/g, "") // format/bidi controls
-    .replace(/[\s‐-―-]/g, ""); // spaces + hyphen/dash variants
+  return stripControls(text).replace(/[\s‐-―-]/g, ""); // + spaces + hyphen/dash variants
+}
+
+/**
+ * Layer A (text) — which needles genuinely survive in the re-extracted body/metadata text. A NAME needle
+ * counts only when it appears as a WHOLE WORD (the exact standard redaction uses), on the
+ * boundary-preserving form — so a short name that is only a substring of a longer legit word ("כהן" in
+ * "מכהן"/"הכהן") is NOT a false leak. A NUMERIC needle counts when it appears bounded by non-digits on the
+ * separator-stripped form — separator-robust, and a run inside a longer number is not this value. Both
+ * forms also check the reversed needle (mupdf extracts Hebrew in reversed visual order). Pure; the worker
+ * self-verify and the office verify can share it so the leak standard never drifts from the redaction one.
+ */
+export function textLeaks(bodyText: string, metaText: string, needles: readonly string[]): string[] {
+  const bodyBound = stripControls(bodyText);
+  const metaBound = stripControls(metaText);
+  const bodyStripped = normalizeForLeak(bodyText);
+  const metaStripped = normalizeForLeak(metaText);
+  const isDigit = (ch: string): boolean => ch >= "0" && ch <= "9";
+  const digitBounded = (haystack: string, digits: string): boolean => {
+    for (let from = haystack.indexOf(digits); from !== -1; from = haystack.indexOf(digits, from + 1)) {
+      const before = from > 0 ? haystack[from - 1] : "";
+      const after = from + digits.length < haystack.length ? haystack[from + digits.length] : "";
+      if (!isDigit(before) && !isDigit(after)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  const numericLeak = (digits: string): boolean =>
+    [bodyStripped, metaStripped].some((h) => digitBounded(h, digits) || digitBounded(h, reverse(digits)));
+  const wholeWordLeak = (name: string): boolean =>
+    [bodyBound, metaBound].some((h) => occursAsWholeWord(h, name) || occursAsWholeWord(h, reverse(name)));
+  return needles.filter((needle) => {
+    const digits = normalizeForLeak(needle);
+    if (/^\d+$/.test(digits)) {
+      return digits.length > 0 && numericLeak(digits);
+    }
+    const name = stripControls(needle).trim();
+    return name.length > 0 && wholeWordLeak(name);
+  });
 }
 
 /** A stream whose payload is a font program or image — skip it (binary false positives). */

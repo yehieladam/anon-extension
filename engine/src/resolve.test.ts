@@ -21,6 +21,14 @@ describe("resolveOverlaps", () => {
     expect(resolveOverlaps([person, id])).toEqual([id]);
   });
 
+  it("a checksum-valid ID wins over a landline-shaped phone on the same span (labeled ת״ז, not טלפון)", () => {
+    // 020000006 is a valid Israeli ID AND a valid landline; both fire on the identical span.
+    const id = span(5, 14, "ISRAELI_ID", 1);
+    const phone = span(5, 14, "IL_PHONE", 1);
+    expect(resolveOverlaps([phone, id])).toEqual([id]);
+    expect(resolveOverlaps([id, phone])).toEqual([id]); // order-independent
+  });
+
   it("keeps adjacent (touching, non-overlapping) spans, in reading order", () => {
     const a = span(0, 5, "PERSON", 0.9);
     const b = span(5, 10, "IL_PHONE", 1);
