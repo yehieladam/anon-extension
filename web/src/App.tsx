@@ -20,10 +20,12 @@ import { loadNer, useNer } from "./worker/nerController";
 /** Progress of the slow scanned-PDF OCR op (Stage 5). "model" = the one-time NER load precedes OCR. */
 type ScanProgress = { phase: "model" | "reading" | "verifying"; page?: number; total?: number };
 
-/** What produced the current result — so we can re-run it with NER once the model is ready. */
+/** What produced the current result — so we can re-run it with NER once the model is ready. `scan` marks
+ * a file that classified as a scanned PDF, so EVERY re-run path (NER-ready, manual terms) routes it back
+ * through the OCR pass instead of the text path. */
 type Source =
   | { readonly kind: "text"; readonly text: string }
-  | { readonly kind: "file"; readonly name: string; readonly buffer: ArrayBuffer };
+  | { readonly kind: "file"; readonly name: string; readonly buffer: ArrayBuffer; readonly scan?: boolean };
 
 /** AGPL-3.0 §13: users interacting over a network must be offered the corresponding source. */
 const SOURCE_URL = "https://github.com/yehieladam/anon-extension";
@@ -99,7 +101,6 @@ export function App() {
   // Scanned-PDF OCR (Stage 5): a scan awaiting the NER model before its single OCR pass, the live
   // per-page progress, and the two-tier refusal ("lowQuality" = readable-poorly; "unsafe" = the rare
   // internal-safety refusals SCAN_UNMAPPABLE_PII / SCAN_SELFVERIFY_FAILED).
-  const [scanPending, setScanPending] = useState(false);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [scanNotice, setScanNotice] = useState<null | "lowQuality" | "unsafe">(null);
   const [redacted, setRedacted] = useState<{ bytes: Uint8Array; name: string; mime: string } | null>(
@@ -133,6 +134,7 @@ export function App() {
     setRestoreResult(null);
     setRedacted(null);
     setScannedNotice(false);
+    setScanNotice(null); // a fresh result clears any leftover scan refusal from a prior file
   }, []);
 
   const onAnonymize = useCallback(async () => {
@@ -158,18 +160,22 @@ export function App() {
   // worker; the three refusal codes map to the two-tier notice; any failure pulls the download (never
   // hand back a scan we could not fully redact + verify).
   const runScanRedaction = useCallback(
-    async (name: string, buffer: ArrayBuffer, terms: readonly string[]) => {
+    async (name: string, buffer: ArrayBuffer, terms: readonly string[], isCancelled?: () => boolean) => {
       setStatus("reading");
       setScanNotice(null);
       setFileError(false);
+      const onProgress = Comlink.proxy((event: ScanProgress) => {
+        if (!isCancelled?.()) setScanProgress(event);
+      });
       try {
-        const onProgress = Comlink.proxy((event: ScanProgress) => setScanProgress(event));
         const { result, bytes } = await getEngine().redactFile(name, buffer, terms, true, onProgress);
+        if (isCancelled?.()) return; // source changed / unmounted during the multi-second OCR
         showResult(result);
         if (bytes) {
           setRedacted({ bytes, name: redactedName(name), mime: mimeFor(name) });
         }
       } catch (error) {
+        if (isCancelled?.()) return;
         setRedacted(null);
         const kind = scanNoticeFor(error instanceof Error ? error.message : "");
         if (kind) {
@@ -179,9 +185,10 @@ export function App() {
           setFileError(true);
         }
       } finally {
-        setScanPending(false);
-        setScanProgress(null);
-        setStatus(null);
+        if (!isCancelled?.()) {
+          setScanProgress(null);
+          setStatus(null);
+        }
       }
     },
     [showResult],
@@ -198,27 +205,28 @@ export function App() {
       setFormulaNotice(false);
       setSelfVerifyNotice(false);
       setScanNotice(null);
-      setScanPending(false);
       setManualTerms([]);
       try {
         const buffer = await file.arrayBuffer();
-        setSource({ kind: "file", name: file.name, buffer });
-        // Scan route (flag-gated): a scanned PDF is OCR-redacted, but only after NER is ready (H3 — a
-        // name-bearing doc is never redacted/downloadable name-unredacted). Defer to the NER-ready effect
-        // when the model is still loading; run immediately if it is already ready.
+        // Scan route (flag-gated): classify BEFORE committing the source, so a scan is marked
+        // `scan:true` atomically (no window where the NER-ready effect sees a scan source without the
+        // flag and misroutes it to the text path). OCR runs only after NER is ready (H3 — a name-bearing
+        // doc is never redacted/downloadable name-unredacted): run now if ready, else the NER-ready
+        // effect runs it on the ready transition.
         if (isScanOcrEnabled() && file.name.toLowerCase().endsWith(".pdf")) {
           const kind = await getEngine().classifyPdf(buffer);
           if (kind === "scan") {
+            setSource({ kind: "file", name: file.name, buffer, scan: true });
             if (ner.status === "ready") {
               await runScanRedaction(file.name, buffer, []);
             } else {
-              setScanPending(true);
               void loadNer();
               setStatus(null);
             }
             return;
           }
         }
+        setSource({ kind: "file", name: file.name, buffer });
         const { result: anonymized, bytes } = await getEngine().redactFile(file.name, buffer, []);
         showResult(anonymized);
         if (bytes) {
@@ -257,14 +265,15 @@ export function App() {
     if (ner.status !== "ready" || wasReady || source === null) {
       return;
     }
-    // A scan deferred until the model was ready: run its single OCR pass now (not the text/office upgrade).
-    if (scanPending && source.kind === "file") {
-      void runScanRedaction(source.name, source.buffer, manualTerms);
-      return;
-    }
     let cancelled = false;
     void (async () => {
       try {
+        // A scan deferred until the model was ready: run its single OCR pass now (not the text/office
+        // upgrade), sharing this effect's cancellation so a stale pass can't commit after source changes.
+        if (source.kind === "file" && source.scan) {
+          await runScanRedaction(source.name, source.buffer, manualTerms, () => cancelled);
+          return;
+        }
         if (source.kind === "text") {
           const upgraded = await getEngine().anonymizeSmart(source.text, manualTerms);
           if (!cancelled) {
@@ -297,12 +306,18 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [ner.status, source, showResult, manualTerms, scanPending, runScanRedaction]);
+  }, [ner.status, source, showResult, manualTerms, runScanRedaction]);
 
   // Re-run the current source with a new set of manual terms (add/remove a hand-picked redaction).
   const reprocessManual = useCallback(
     async (terms: string[]) => {
       if (!source) {
+        return;
+      }
+      // A scan must re-run through the OCR pass (with scanOcr), never the text path — otherwise the
+      // re-run hits NO_TEXT_LAYER and destroys the already-good redacted download.
+      if (source.kind === "file" && source.scan) {
+        await runScanRedaction(source.name, source.buffer, terms);
         return;
       }
       setStatus(source.kind === "file" ? "reading" : "working");
@@ -326,7 +341,7 @@ export function App() {
         setStatus(null);
       }
     },
-    [source, showResult],
+    [source, showResult, runScanRedaction],
   );
 
   const onAddManual = useCallback(() => {
@@ -654,7 +669,7 @@ export function App() {
               </div>
             </div>
           )}
-          {scanPending && ner.status === "error" && (
+          {source?.kind === "file" && source.scan && ner.status === "error" && !redacted && (
             <div
               className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-800"
               role="alert"
@@ -663,7 +678,7 @@ export function App() {
               <button
                 type="button"
                 onClick={onRetryNer}
-                className="shrink-0 rounded-full border border-amber-300 px-3 py-1 text-xs font-medium hover:bg-amber-100"
+                className="inline-flex min-h-[44px] shrink-0 items-center rounded-full border border-amber-300 px-4 text-xs font-medium hover:bg-amber-100"
               >
                 {t("result.retryNames")}
               </button>
@@ -756,6 +771,7 @@ export function App() {
                   ))}
                 {redacted &&
                   source?.kind === "file" &&
+                  !source.scan && // a scan's redaction is visual (no tokens) — its anonymizedText is empty
                   source.name.toLowerCase().endsWith(".pdf") &&
                   ner.status !== "loading" && (
                     <button

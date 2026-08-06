@@ -9,7 +9,7 @@
  *   node --dns-result-order=ipv4first scripts/fetch-tesseract-assets.mjs
  */
 import { setDefaultResultOrder } from "node:dns";
-import { cpSync, mkdirSync, existsSync, statSync, createWriteStream } from "node:fs";
+import { cpSync, mkdirSync, existsSync, statSync, createWriteStream, renameSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -50,7 +50,16 @@ for (const lang of ["heb", "eng"]) {
   if (!res.ok || !res.body) {
     throw new Error(`download ${lang} failed: ${res.status}`);
   }
-  await pipeline(Readable.fromWeb(res.body), createWriteStream(out));
+  // Stream to a .part file and rename only on success — so an interrupted download never leaves a
+  // truncated .gz that the size>0 guard above would treat as complete forever (a silent broken vendor).
+  const part = `${out}.part`;
+  try {
+    await pipeline(Readable.fromWeb(res.body), createWriteStream(part));
+    renameSync(part, out);
+  } catch (error) {
+    if (existsSync(part)) rmSync(part);
+    throw error;
+  }
   console.log(`downloaded ${lang}.traineddata.gz  ${statSync(out).size} bytes`);
 }
 console.log("tesseract assets vendored.");

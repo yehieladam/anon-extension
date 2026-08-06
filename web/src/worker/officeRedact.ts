@@ -384,14 +384,16 @@ export async function redactFile(
     case "csv":
       return redactPlainText(buffer, anonymize);
     case "pdf": {
-      // Route text-vs-scan (Stage 5): a scanned (image-only) PDF goes to the OCR redaction path ONLY when
-      // the scan flag is on; otherwise redactPdf handles text and refuses scans via NO_TEXT_LAYER (kept as
-      // a backstop). Lazy imports so mupdf/tesseract load only when a PDF is actually processed (P0I-02).
-      const { redactPdf, isScannedPdf } = await import("./pdfRedact");
-      if (options.scanOcr && (await isScannedPdf(buffer))) {
+      // Route text-vs-scan (Stage 5). scanOcr is set by the App ONLY after classifyPdf already identified
+      // this buffer as a scan, so we trust it here rather than re-parsing the whole document a second time
+      // (isScannedPdf is a full per-page text extraction). The OCR path's own quality gate + self-verify
+      // are the real safety net; redactPdf keeps its NO_TEXT_LAYER refusal for the scanOcr-off path. Lazy
+      // imports so mupdf/tesseract load only when a PDF is actually processed (P0I-02).
+      if (options.scanOcr) {
         const { redactScan } = await import("./scanRedact");
         return redactScan(buffer, anonymize, options.ocr, options.detect, options.onProgress);
       }
+      const { redactPdf } = await import("./pdfRedact");
       return redactPdf(buffer, anonymize);
     }
     default:
