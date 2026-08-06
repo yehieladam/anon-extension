@@ -41,4 +41,17 @@ describe("textLeaks — H1 fix (whole-word names, digit-bounded numbers)", () =>
   it("7. a leak in the METADATA channel is caught", () => {
     expect(textLeaks("clean body", "author: כהן", ["כהן"])).toEqual(["כהן"]);
   });
+
+  it("8. tokenization-adjacency: a needle glued to a placeholder bracket is NOT a leak", () => {
+    // "…טל03-6489210…" -> the phone tokenizes to "[טלפון_4]", leaving "טל[טלפון_4]". "טל" was never a
+    // whole word in the original (glued to the digit "0"); only the token forges a boundary. The AI-text
+    // verify neutralizes brackets ("[" / "]" -> word char) before scanning, so this is not flagged.
+    const aiText = "מר [שם_2] טל[טלפון_4]".replace(/[[\]]/g, "x");
+    expect(textLeaks(aiText, "", ["טל"])).toEqual([]);
+  });
+
+  it("9. a real name separated from a token by a space IS still a leak (neutralization is narrow)", () => {
+    const aiText = "[שם_1] טל הגיש".replace(/[[\]]/g, "x");
+    expect(textLeaks(aiText, "", ["טל"])).toEqual(["טל"]);
+  });
 });

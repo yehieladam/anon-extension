@@ -33,6 +33,10 @@ const SAFE_SAVE_OPTIONS = { garbage: "deduplicate", compress: true, sanitize: tr
 
 /** Thrown (as an Error message, so it survives Comlink) when a PDF has no usable text layer. */
 export const NO_TEXT_LAYER = "NO_TEXT_LAYER";
+/** Thrown when the tokenized "Word for AI" text ITSELF still contains a detected original — a real
+ * tokenization/overlay bug, so BOTH deliverables are refused (this hard gate is never relaxed). Distinct
+ * from a visual-PDF verify failure, which only warns (RedactedFile.pdfUnverified). */
+export const TEXT_SELFVERIFY_FAILED = "TEXT_SELFVERIFY_FAILED";
 /** Below this many non-whitespace characters across the whole document, we treat it as image-only. */
 const NO_TEXT_LAYER_MIN_CHARS = 3;
 
@@ -124,9 +128,18 @@ function readMetadataChannels(doc: any): string {
  * (PDF stores Hebrew strings as hex-ASCII `<FEFF…>`, so a raw-byte scan is blind to them — decoding and
  * reading Info/outlines/annotations is the reliable check there).
  */
-async function selfVerify(bytes: Uint8Array, needles: readonly string[]): Promise<void> {
+interface VisualVerify {
+  readonly ok: boolean;
+  /** The specific terms that could not be confirmed absent (layerA text + layerB bytes) — named to the
+   * user so the download is an informed, targeted check ("טל" reads as a harmless abbreviation; a real
+   * surviving name jumps out). Empty when ok. */
+  readonly terms: readonly string[];
+  readonly detail: string;
+}
+
+async function selfVerify(bytes: Uint8Array, needles: readonly string[]): Promise<VisualVerify> {
   if (needles.length === 0) {
-    return;
+    return { ok: true, terms: [], detail: "ok" };
   }
   const mupdf: any = await import("mupdf");
   const doc = mupdf.PDFDocument.openDocument(bytes, "application/pdf");
@@ -138,12 +151,10 @@ async function selfVerify(bytes: Uint8Array, needles: readonly string[]): Promis
   // Layers B + C — raw-byte scan (incl. inflated streams) and structure check.
   const b = await layerB(bytes, needles);
   const c = layerC(bytes);
-  if (layerAHits.length > 0 || !b.pass || !c.pass) {
-    throw new Error(
-      `PDF redaction self-verify FAILED (layerA/meta=${layerAHits.join(",") || "ok"} ` +
-        `layerB=${b.hits.join(",") || "ok"} layerC=eof:${c.eofCount}/sx:${c.startxrefCount})`,
-    );
-  }
+  const ok = layerAHits.length === 0 && b.pass && c.pass;
+  const terms = [...new Set([...layerAHits, ...b.hits.map((h) => h.split(" [")[0])])];
+  const detail = `layerA/meta=${layerAHits.join(",") || "ok"} layerB=${b.hits.join(",") || "ok"} layerC=eof:${c.eofCount}/sx:${c.startxrefCount}`;
+  return { ok, terms, detail };
 }
 
 /**
@@ -181,6 +192,16 @@ export async function redactPdf(buffer: ArrayBuffer, anonymize: Anonymize): Prom
   }
 
   const result: AnonymizeResult = await anonymize(combined);
+  // TEXT self-verify (hard gate, always): the tokenized "Word for AI" text must not contain any detected
+  // original. This deliverable is string-overlay, independent of the visual PDF's quad redaction, so it is
+  // clean even when the visual redaction misses a glyph; a failure here is a real overlay bug → refuse.
+  // Neutralize placeholder brackets first ("[" / "]" -> word char): tokenizing a value ADJACENT to a
+  // needle can otherwise forge a whole-word boundary (e.g. "טל03…" -> "טל[טלפון_4]"), a false positive —
+  // the needle was correctly never a span (glued to a digit in the original), only the token isolates it.
+  const aiText = result.anonymizedText.replace(/[[\]]/g, "x");
+  if (textLeaks(aiText, "", result.key.map((row) => row.original)).length > 0) {
+    throw new Error(TEXT_SELFVERIFY_FAILED);
+  }
   const replacements = toReplacements(combined, result);
   const bodyEnd = mapped.text.length;
 
@@ -232,7 +253,12 @@ export async function redactPdf(buffer: ArrayBuffer, anonymize: Anonymize): Prom
   // asUint8Array() is a live view into WASM memory — the self-verify below re-opens mupdf and would
   // clobber it. Copy into a JS-owned buffer immediately.
   const bytes = new Uint8Array(doc.saveToBuffer(SAFE_SAVE_OPTIONS).asUint8Array());
-  await selfVerify(bytes, result.key.map((row) => row.original));
-  return { bytes, result };
+  // VISUAL self-verify: gates only whether we can CERTIFY the redacted PDF clean. On failure we no longer
+  // withhold the file — the owner reviews the preview and can add missed terms — but we surface a warning
+  // (pdfUnverified) so the download is an INFORMED choice, not a blind one. The Word deliverable above is
+  // already hard-verified. layerB/layerC (byte + structure) still ran inside selfVerify.
+  const verify = await selfVerify(bytes, result.key.map((row) => row.original));
+  const pdfUnverified = verify.ok ? undefined : { reason: verify.detail, terms: verify.terms };
+  return { bytes, result, ...(pdfUnverified ? { pdfUnverified } : {}) };
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */

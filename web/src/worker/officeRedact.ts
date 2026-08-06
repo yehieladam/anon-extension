@@ -40,6 +40,16 @@ export type Anonymize = (text: string) => AnonymizeResult | Promise<AnonymizeRes
 export interface RedactedFile {
   readonly bytes: Uint8Array;
   readonly result: AnonymizeResult;
+  /** Set by the PDF path when the visual redaction could not be fully VERIFIED clean — the bytes are
+   * still returned (they pass the byte/structure checks), and the App offers the download with a warning
+   * that NAMES the unverified `terms` so the user does a targeted 2-second check (owner decision: informed
+   * choice, not a silent block). The AI-text/token deliverable stays hard-gated by its own text verify. */
+  readonly pdfUnverified?: PdfUnverified;
+}
+
+export interface PdfUnverified {
+  readonly reason: string; // the layerA/B/C detail (for logs)
+  readonly terms: readonly string[]; // the specific terms to eyeball in the rendered PDF
 }
 
 /**
@@ -51,6 +61,7 @@ export interface RedactedFile {
 export interface FileRedaction {
   readonly result: AnonymizeResult;
   readonly bytes?: Uint8Array;
+  readonly pdfUnverified?: PdfUnverified; // see RedactedFile.pdfUnverified
 }
 
 /** Thrown when an xlsx has PII in a FORMULA cell — refused rather than under-redacted (surfaced in UI). */
