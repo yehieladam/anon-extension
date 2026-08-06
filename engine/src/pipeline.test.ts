@@ -3,7 +3,12 @@
  */
 import { describe, expect, it } from "vitest";
 import type { Span } from "./types";
-import { anonymizeDeterministic, anonymizeFull, detectDeterministic } from "./pipeline";
+import {
+  anonymizeDeterministic,
+  anonymizeFull,
+  anonymizeManualOnly,
+  detectDeterministic,
+} from "./pipeline";
 import { restore } from "./restore";
 
 const DOC = "הלקוח ת״ז 123456709, טלפון 052-1234567, דוא״ל cohen.law@office.co.il";
@@ -40,5 +45,29 @@ describe("anonymizeFull", () => {
     expect(result.anonymizedText).toContain("[NAME_1]");
     expect(result.anonymizedText).toContain("[ID_1]");
     expect(restore(result.anonymizedText, result.key).restoredText).toBe(text);
+  });
+});
+
+describe("anonymizeManualOnly", () => {
+  it("redacts ONLY the chosen terms and leaves auto-detected PII untouched", () => {
+    // Deterministic PII (a valid ID) is present, but manual-only must NOT touch it.
+    const text = "הלקוח דוד כהן, ת״ז 123456709, גר ברחוב הרצל";
+    const result = anonymizeManualOnly(text, ["דוד כהן", "הרצל"]);
+    expect(result.anonymizedText).toContain("[TERM_1]"); // דוד כהן
+    expect(result.anonymizedText).toContain("[TERM_2]"); // הרצל
+    expect(result.anonymizedText).toContain("123456709"); // the ID is left as-is (no auto-detection)
+    expect(result.anonymizedText).not.toContain("דוד כהן");
+    expect(restore(result.anonymizedText, result.key).restoredText).toBe(text);
+  });
+
+  it("redacts every occurrence of a chosen term", () => {
+    const result = anonymizeManualOnly("כהן פגש את כהן", ["כהן"]);
+    expect(result.anonymizedText).toBe("[TERM_1] פגש את [TERM_1]");
+  });
+
+  it("returns the text unchanged with an empty key when no terms are given", () => {
+    const result = anonymizeManualOnly("שום דבר לא נבחר", []);
+    expect(result.anonymizedText).toBe("שום דבר לא נבחר");
+    expect(result.key).toEqual([]);
   });
 });

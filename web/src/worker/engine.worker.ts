@@ -16,7 +16,7 @@ import * as Comlink from "comlink";
 // Import from specific engine modules, NOT the @engine/index barrel — the barrel re-exports ner.ts
 // (which pulls transformers.js + onnxruntime's wasm). Keeping that out of this graph is what makes
 // the deterministic path instant and lets the model lazy-load only when NER is used (P0I-02).
-import { anonymizeDeterministic, anonymizeWith } from "@engine/pipeline";
+import { anonymizeDeterministic, anonymizeManualOnly, anonymizeWith } from "@engine/pipeline";
 import { manualSpans } from "@engine/manual";
 import { restore } from "@engine/restore";
 import type { AnonymizeResult, KeyRow, Span } from "@engine/types";
@@ -51,7 +51,15 @@ function threadCount(): number {
  * Anonymize with NER names when the model is ready, plus any manual user terms — the terms the user
  * added by hand for things the detectors missed (highest priority).
  */
-async function anonymizeSmart(text: string, manualTerms: readonly string[] = []): Promise<AnonymizeResult> {
+async function anonymizeSmart(
+  text: string,
+  manualTerms: readonly string[] = [],
+  manualOnly = false,
+): Promise<AnonymizeResult> {
+  // Manual-only: redact ONLY the user's chosen terms — skip deterministic detection AND NER (no model).
+  if (manualOnly) {
+    return anonymizeManualOnly(text, manualTerms);
+  }
   const nerSpans = ner === null ? [] : await ner.recognize(text);
   return anonymizeWith(text, [...nerSpans, ...manualSpans(text, manualTerms)]);
 }
@@ -99,9 +107,14 @@ const api = {
     return anonymizeDeterministic(text);
   },
 
-  /** Deterministic + NER names (when ready) + manual user terms. */
-  anonymizeSmart(text: string, manualTerms: readonly string[] = []): Promise<AnonymizeResult> {
-    return anonymizeSmart(text, manualTerms);
+  /** Deterministic + NER names (when ready) + manual user terms. `manualOnly` redacts ONLY the user's
+   *  terms (no auto-detection, no model). */
+  anonymizeSmart(
+    text: string,
+    manualTerms: readonly string[] = [],
+    manualOnly = false,
+  ): Promise<AnonymizeResult> {
+    return anonymizeSmart(text, manualTerms, manualOnly);
   },
 
   /**
@@ -116,8 +129,12 @@ const api = {
     manualTerms: readonly string[] = [],
     scanOcr = false,
     onProgress?: (event: { phase: "reading" | "verifying"; page: number; total: number }) => void,
+    manualOnly = false,
   ): Promise<FileRedaction> {
-    return redactFile(fileName, buffer, (text) => anonymizeSmart(text, manualTerms), { scanOcr, onProgress });
+    return redactFile(fileName, buffer, (text) => anonymizeSmart(text, manualTerms, manualOnly), {
+      scanOcr,
+      onProgress,
+    });
   },
 
   /** Classify a PDF as text-layer vs scanned image (Stage 5) so the App can defer a scan until NER-ready

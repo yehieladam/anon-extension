@@ -66,6 +66,34 @@ test("restore: paste → redact (in-memory key) → restore brings the originals
   await expect(page.getByText(ID, { exact: false })).toBeVisible();
 });
 
+test("manual-only: redacts only the chosen term, leaves auto PII, never loads the model", async ({
+  page,
+}) => {
+  // Manual-only must NOT request the 185MB names model — fail if any model host is hit.
+  const modelRequests: string[] = [];
+  page.on("request", (req) => {
+    const { hostname } = new URL(req.url());
+    if (/huggingface\.co|hf\.co|jsdelivr\.net/.test(hostname)) modelRequests.push(hostname);
+  });
+
+  await page.goto("/");
+  await page.getByRole("checkbox").first().check(); // manual-only (the only checkbox pre-result)
+  await page.fill("textarea", `דוד כהן ותעודת זהות ${ID}`);
+  await page.getByRole("button", { name: "השחרת המסמך" }).click();
+
+  // Add the only thing to redact: the user's chosen term.
+  await page.getByRole("button", { name: "+ הוספה ידנית" }).click();
+  await page.fill("input[placeholder^='מילה או מספר']", "דוד כהן");
+  await page.getByRole("button", { name: "הוספה", exact: true }).click();
+
+  // The chosen term is tokenized ([TERM_1]); the valid ID is LEFT ALONE (no automatic detection).
+  await expect(page.locator("mark", { hasText: "TERM" })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(`ותעודת זהות ${ID}`, { exact: true })).toBeVisible(); // raw ID survives
+  await expect(page.locator("mark", { hasText: "ID_" })).toHaveCount(0); // ID was NOT auto-detected
+  expect(modelRequests).toEqual([]); // and the 185MB model was never requested
+
+});
+
 test("@model docx + xlsx: redact in place and download a file without the originals", async ({
   page,
 }) => {
