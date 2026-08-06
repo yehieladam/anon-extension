@@ -704,7 +704,7 @@ export function App() {
           {ner.status === "loading" && (
             <div className="mt-3 rounded-2xl border border-hairline bg-surface px-4 py-3" aria-live="polite">
               <div className="flex items-center justify-between gap-3 text-xs text-zinc-600">
-                <span>{t("ner.loading")}</span>
+                <span>{t(ner.cachedBefore ? "ner.loadingCached" : "ner.loading")}</span>
                 <span className="tabular-nums text-zinc-400">{ner.progress}%</span>
               </div>
               <div className="mt-2 h-1 overflow-hidden rounded-full bg-hairline">
