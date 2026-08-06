@@ -30,6 +30,25 @@ type Source =
 /** AGPL-3.0 §13: users interacting over a network must be offered the corresponding source. */
 const SOURCE_URL = "https://github.com/yehieladam/anon-extension";
 const COPIED_RESET_MS = 1500;
+const MANUAL_ONLY_KEY = "mechikon.manualOnly";
+
+/** Read the persisted manual-only preference (default off = automatic detection). */
+function readManualOnly(): boolean {
+  try {
+    return localStorage.getItem(MANUAL_ONLY_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Persist the manual-only preference so it survives reloads. */
+function writeManualOnly(on: boolean): void {
+  try {
+    localStorage.setItem(MANUAL_ONLY_KEY, on ? "1" : "0");
+  } catch {
+    // Private mode / storage disabled — the toggle still works for this session.
+  }
+}
 
 /** Insert the "redacted" suffix before the extension: report.docx → report_מושחר.docx */
 function redactedName(fileName: string): string {
@@ -116,6 +135,12 @@ export function App() {
   const [manualTerms, setManualTerms] = useState<string[]>([]);
   const [manualInput, setManualInput] = useState("");
   const [showManualInput, setShowManualInput] = useState(false);
+  // Manual-only mode: redact ONLY the user's chosen terms — no automatic detection, no 185MB model.
+  // Persisted so a user who prefers it never triggers a model load. A ref mirrors it so the many
+  // worker-calling callbacks read the latest value without each depending on it (no stale closures).
+  const [manualOnly, setManualOnly] = useState<boolean>(() => readManualOnly());
+  const manualOnlyRef = useRef(manualOnly);
+  manualOnlyRef.current = manualOnly;
   // Restore-key download/upload (KEY-01): the key is in-memory by default; download is opt-in and
   // encryption (passphrase) is on by default.
   const [encryptKey, setEncryptKey] = useState(true);
@@ -152,9 +177,12 @@ export function App() {
     setSource({ kind: "text", text });
     setManualTerms([]);
     try {
-      // Instant deterministic (or full, if the model is already loaded), then load NER for names.
-      showResult(await getEngine().anonymizeSmart(text, []));
-      void loadNer();
+      // Manual-only: redact just the chosen terms, no model. Otherwise instant deterministic now, then
+      // load NER for names (it upgrades the result when ready).
+      showResult(await getEngine().anonymizeSmart(text, [], manualOnlyRef.current));
+      if (!manualOnlyRef.current) {
+        void loadNer();
+      }
     } finally {
       setStatus(null);
     }
@@ -232,13 +260,22 @@ export function App() {
           }
         }
         setSource({ kind: "file", name: file.name, buffer });
-        const { result: anonymized, bytes, pdfUnverified } = await getEngine().redactFile(file.name, buffer, []);
+        const { result: anonymized, bytes, pdfUnverified } = await getEngine().redactFile(
+          file.name,
+          buffer,
+          [],
+          false,
+          undefined,
+          manualOnlyRef.current,
+        );
         showResult(anonymized);
         if (bytes) {
           setRedacted({ bytes, name: redactedName(file.name), mime: mimeFor(file.name) });
         }
         if (pdfUnverified) setPdfWarnTerms(pdfUnverified.terms);
-        void loadNer();
+        if (!manualOnlyRef.current) {
+          void loadNer();
+        }
       } catch (error) {
         // A scanned/image PDF has no text layer — refuse with a specific notice instead of a falsely
         // "clean" result (the message survives Comlink from the worker).
@@ -272,7 +309,9 @@ export function App() {
   useEffect(() => {
     const wasReady = previousNerStatus.current === "ready";
     previousNerStatus.current = ner.status;
-    if (ner.status !== "ready" || wasReady || source === null) {
+    // Manual-only never loads NER, so there is no names-upgrade pass to run (and the shown result is
+    // already final). Guard defensively in case the model was warmed before the user switched modes.
+    if (manualOnlyRef.current || ner.status !== "ready" || wasReady || source === null) {
       return;
     }
     let cancelled = false;
@@ -335,9 +374,16 @@ export function App() {
       setFileError(false);
       try {
         if (source.kind === "text") {
-          showResult(await getEngine().anonymizeSmart(source.text, terms));
+          showResult(await getEngine().anonymizeSmart(source.text, terms, manualOnlyRef.current));
         } else {
-          const { result, bytes, pdfUnverified } = await getEngine().redactFile(source.name, source.buffer, terms);
+          const { result, bytes, pdfUnverified } = await getEngine().redactFile(
+            source.name,
+            source.buffer,
+            terms,
+            false,
+            undefined,
+            manualOnlyRef.current,
+          );
           showResult(result);
           if (bytes) {
             setRedacted({ bytes, name: redactedName(source.name), mime: mimeFor(source.name) });
@@ -355,6 +401,21 @@ export function App() {
     },
     [source, showResult, runScanRedaction],
   );
+
+  // Toggle manual-only mode. Update the ref synchronously so the reprocess below runs under the new
+  // mode; persist the choice; warm the model when switching back to automatic; re-run the current doc.
+  const onToggleManualOnly = useCallback(() => {
+    const next = !manualOnlyRef.current;
+    manualOnlyRef.current = next;
+    setManualOnly(next);
+    writeManualOnly(next);
+    if (!next) {
+      void loadNer();
+    }
+    if (source) {
+      void reprocessManual(manualTerms);
+    }
+  }, [source, manualTerms, reprocessManual]);
 
   const onAddManual = useCallback(() => {
     const term = manualInput.trim();
@@ -626,7 +687,17 @@ export function App() {
               </button>
             </div>
           </div>
-          <p className={`mt-3 px-2 text-xs ${fileError ? "text-amber-600" : "text-zinc-400"}`}>
+          <label className="mt-3 flex min-h-[44px] cursor-pointer select-none items-center gap-2 px-2 text-[13px] text-zinc-600">
+            <input
+              type="checkbox"
+              checked={manualOnly}
+              onChange={onToggleManualOnly}
+              disabled={busy}
+              className="h-4 w-4 accent-ink"
+            />
+            <span>{t("input.manualOnly")}</span>
+          </label>
+          <p className={`mt-1 px-2 text-xs ${fileError ? "text-amber-600" : "text-zinc-400"}`}>
             {statusLine}
           </p>
           {scannedNotice && (
@@ -750,12 +821,15 @@ export function App() {
                   // A redacted FILE only has names removed once NER has settled. Never hand back the
                   // file before that (trust: no second chance). While loading -> a pending pill; if the
                   // model FAILED -> withhold the download entirely and offer a retry (the deterministic
-                  // ID/phone/company chips are already shown, so nothing detected is hidden).
-                  (source?.kind === "file" && (ner.status === "loading" || ner.status === "idle") ? (
+                  // ID/phone/company chips are already shown, so nothing detected is hidden). Manual-only
+                  // never uses NER, so its result is final immediately — skip the NER gate entirely.
+                  (!manualOnly &&
+                  source?.kind === "file" &&
+                  (ner.status === "loading" || ner.status === "idle") ? (
                     <span className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-hairline px-4 text-[13px] font-medium text-zinc-400">
                       {t("result.downloadPending")}
                     </span>
-                  ) : source?.kind === "file" && ner.status === "error" ? (
+                  ) : !manualOnly && source?.kind === "file" && ner.status === "error" ? (
                     <button
                       type="button"
                       onClick={onRetryNer}
@@ -862,7 +936,11 @@ export function App() {
                 >
                   {highlight(result.anonymizedText)}
                 </div>
-                {source?.kind === "file" && ner.status === "error" ? (
+                {manualOnly ? (
+                  <p className="mt-3 rounded-xl bg-amber-50/60 px-3 py-2 text-xs leading-relaxed text-zinc-600">
+                    {t("result.noteManual")}
+                  </p>
+                ) : source?.kind === "file" && ner.status === "error" ? (
                   // Names detection failed for a file — the authoritative message is the hard block, not
                   // the ordinary "loading…" note (which would read as if a file is on its way).
                   <p
