@@ -21,6 +21,25 @@ function isWholeWord(text: string, start: number, end: number): boolean {
 }
 
 /**
+ * Does `needle` occur as a WHOLE WORD in `text` — the exact standard redaction uses (isWholeWord). The
+ * PDF/office self-verify uses this so a redacted short name ("כהן") is NOT falsely reported as a leak
+ * when it merely appears inside a legit un-redacted word ("מכהן"/"הכהן") — the substring is not the
+ * entity we redact, so it is not a leak. A real whole-word survivor still matches. Shared so the leak
+ * standard can never drift from the redaction standard.
+ */
+export function occursAsWholeWord(text: string, needle: string): boolean {
+  if (needle.length === 0) {
+    return false;
+  }
+  for (let from = text.indexOf(needle); from !== -1; from = text.indexOf(needle, from + 1)) {
+    if (isWholeWord(text, from, from + needle.length)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * For each span, emit a span at every whole-word occurrence of its surface value in `text` (same type
  * and score). Returns only the ADDITIONAL occurrence spans; callers resolve these together with the
  * originals (resolveOverlaps drops duplicates and keeps the longest on overlap, so a value that is a

@@ -16,7 +16,7 @@ import {
 } from "@engine/pdfText";
 import { toReplacements } from "@engine/overlay";
 import type { AnonymizeResult } from "@engine/types";
-import { layerB, layerC, normalizeForLeak } from "@engine/pdfVerify";
+import { layerB, layerC, textLeaks } from "@engine/pdfVerify";
 import type { RedactedFile, Anonymize } from "./officeRedact";
 import { collectOutlineItems, sanitizeMetadata, type OutlineItem } from "./pdfSanitize";
 
@@ -132,15 +132,9 @@ async function selfVerify(bytes: Uint8Array, needles: readonly string[]): Promis
   const doc = mupdf.PDFDocument.openDocument(bytes, "application/pdf");
   const bodyText = mappedFromDoc(doc).text;
   const metaText = readMetadataChannels(doc);
-  const normBody = normalizeForLeak(bodyText);
-  const normMeta = normalizeForLeak(metaText);
-  const reversed = (s: string): string => [...s].reverse().join("");
-  const present = (haystack: string, needle: string): boolean =>
-    haystack.includes(needle) || haystack.includes(reversed(needle));
-  const layerAHits = needles.filter((n) => {
-    const nn = normalizeForLeak(n);
-    return nn.length > 0 && (present(normBody, nn) || present(normMeta, nn));
-  });
+  // Layer A: whole-word for names (a short name inside a longer legit word is NOT a leak — the false
+  // positive that threw away correctly-redacted files), digit-bounded for numerics. See engine/pdfVerify.
+  const layerAHits = textLeaks(bodyText, metaText, needles);
   // Layers B + C — raw-byte scan (incl. inflated streams) and structure check.
   const b = await layerB(bytes, needles);
   const c = layerC(bytes);
