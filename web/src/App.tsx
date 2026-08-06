@@ -548,10 +548,15 @@ export function App() {
               ) : (
                 <>
                   {t("trust.badge.count", { count: net.count })}
-                  {ner.modelRequests > 0 && (
-                    <span className="text-zinc-300">
-                      · {t("trust.badge.model", { count: ner.modelRequests })}
-                    </span>
+                  {/* Once the model is loaded, show a STATUS, not a rising request count: the count
+                      includes cache-served requests on reload and misreads as a re-download (it is not —
+                      the model is fetched once and served from the browser cache thereafter). */}
+                  {ner.status === "ready" ? (
+                    <span className="text-zinc-300">· {t("trust.badge.modelLoaded")}</span>
+                  ) : (
+                    ner.modelRequests > 0 && (
+                      <span className="text-zinc-300">· {t("trust.badge.model", { count: ner.modelRequests })}</span>
+                    )
                   )}
                 </>
               )}
