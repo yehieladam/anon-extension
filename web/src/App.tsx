@@ -1020,26 +1020,6 @@ export function App() {
                       {t("result.download")}
                     </button>
                   ))}
-                {result.key.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={onCopy}
-                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-hairline px-4 text-[13px] font-medium text-ink transition hover:bg-surface"
-                  >
-                    {copied ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path
-                          d="M5 12l4.5 4.5L19 7"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    ) : null}
-                    {copied ? t("result.copied") : t("result.copy")}
-                  </button>
-                )}
               </div>
             </div>
 
@@ -1116,8 +1096,39 @@ export function App() {
 
             <div
               dir="rtl"
-              className="whitespace-pre-wrap break-words rounded-2xl border border-hairline bg-surface p-5 text-[17px] leading-loose"
+              className="relative whitespace-pre-wrap break-words rounded-2xl border border-hairline bg-surface p-5 pt-12 text-[17px] leading-loose"
             >
+              {result.anonymizedText.trim().length > 0 && (
+                <button
+                  type="button"
+                  onClick={onCopy}
+                  title={t("result.copy")}
+                  aria-label={t("result.copy")}
+                  className="absolute left-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink"
+                >
+                  {copied ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path
+                        d="M5 12l4.5 4.5L19 7"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.8" />
+                      <path
+                        d="M5 15V5a2 2 0 0 1 2-2h8"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  )}
+                </button>
+              )}
               {renderInteractive(
                 result.anonymizedText,
                 manualTokenToTerm,
