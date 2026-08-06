@@ -105,9 +105,11 @@ function highlight(text: string): ReactNode[] {
   );
 }
 
-/** A clickable word/number run: letters/digits (Hebrew or Latin) with internal connectors kept whole
- *  (so "052-1234567" / "14.07.1981" / "טל׳" stay one unit). */
-const WORD_RUN = /[0-9A-Za-z֐-׿]+(?:[.\-/'’׳״][0-9A-Za-z֐-׿]+)*/g;
+/** A clickable unit: EITHER a letter word (Hebrew/Latin, keeping an internal geresh/gershayim like עו״ד
+ *  or טל׳) OR a number (digits with internal separators kept whole, so 052-1234567 / 14.07.1981 stay one
+ *  unit). Letters and digits are SEPARATE units — "הרצל47" splits into "הרצל" and "47" — so a house
+ *  number can be redacted without the street name and vice versa. */
+const WORD_RUN = /[A-Za-z֐-׿]+(?:['’׳״][A-Za-z֐-׿]+)*|\d+(?:[.\-/]\d+)*/g;
 
 /**
  * Render the anonymized text as an INTERACTIVE preview: already-redacted spans show as token pills
@@ -139,7 +141,7 @@ function renderInteractive(
             type="button"
             title={undoTitle}
             onClick={() => onUndo(manualTerm)}
-            className="mx-0.5 rounded-md bg-amber-100 px-1.5 py-0.5 text-[0.92em] font-medium text-amber-800 transition hover:bg-amber-200"
+            className="mx-0.5 cursor-pointer rounded-md bg-amber-100 px-1.5 py-0.5 text-[0.92em] font-medium text-amber-800 underline decoration-amber-600/60 decoration-dotted underline-offset-2 transition hover:bg-amber-200"
           >
             {part}
           </button>,
@@ -152,7 +154,7 @@ function renderInteractive(
             type="button"
             title={revealTitle}
             onClick={() => onReveal(autoValue)}
-            className="mx-0.5 rounded-md bg-ink/[0.06] px-1.5 py-0.5 text-[0.92em] font-medium text-ink transition hover:bg-ink/[0.12] hover:ring-1 hover:ring-ink/20"
+            className="mx-0.5 cursor-pointer rounded-md bg-ink/[0.06] px-1.5 py-0.5 text-[0.92em] font-medium text-ink underline decoration-ink/40 decoration-dotted underline-offset-2 transition hover:bg-ink/[0.12]"
           >
             {part}
           </button>,
