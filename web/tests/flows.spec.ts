@@ -138,6 +138,26 @@ test("custom name: a named manual term emits [CLIENT_1]; the label input blocks 
   await expect(page.getByRole("button", { name: "[TERM_1]", exact: true })).toHaveCount(0);
 });
 
+test("word/number split: a house number is a separate clickable unit from the street name", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("checkbox").first().check(); // manual-only (model-free)
+  await page.fill("textarea", "רחוב הרצל47 דירה"); // glued letter+digit must split
+  await page.getByRole("button", { name: "השחרת המסמך" }).click();
+
+  // "הרצל" and "47" are SEPARATE clickable units.
+  await expect(page.getByRole("button", { name: "הרצל", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "47", exact: true })).toBeVisible();
+
+  // Clicking only the number redacts it; the street name is untouched.
+  await page.getByRole("button", { name: "47", exact: true }).click();
+  await expect(page.getByRole("button", { name: "[TERM_1]", exact: true })).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(page.getByRole("button", { name: "הרצל", exact: true })).toBeVisible();
+});
+
 test("reveal: click an auto-detected token to un-redact a false positive", async ({ page }) => {
   await page.goto("/");
   await page.fill("textarea", "מספר לקוח 123456709 בתיק"); // ID auto-detected (deterministic, no model)
