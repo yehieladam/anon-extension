@@ -11,10 +11,34 @@ import { getEngine } from "./engineClient";
 
 export type NerStatus = "idle" | "loading" | "ready" | "error";
 
+/**
+ * localStorage flag set after the model first loads successfully. transformers.js caches the 185MB
+ * model bytes in the browser Cache Storage, so every later page load re-instantiates from cache with
+ * NO network re-download — but the load still emits 0→100 progress. This flag lets the banner say
+ * "loading from cache" on those warm loads instead of the misleading one-time "~185MB download" copy.
+ */
+const MODEL_CACHED_KEY = "mechikon:model-cached";
+function modelCachedBefore(): boolean {
+  try {
+    return localStorage.getItem(MODEL_CACHED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function markModelCached(): void {
+  try {
+    localStorage.setItem(MODEL_CACHED_KEY, "1");
+  } catch {
+    // Private mode / storage disabled — the banner just falls back to the first-time copy. Harmless.
+  }
+}
+
 export interface NerState {
   readonly status: NerStatus;
   /** 0–100, the current file's download progress (for the banner). */
   readonly progress: number;
+  /** True when the model was already downloaded in a prior session (warm cache, no re-download). */
+  readonly cachedBefore: boolean;
   /** How many network requests the worker made to download the model (one-time, expected). */
   readonly modelRequests: number;
   /** Worker requests to an UNEXPECTED host (should be 0; the badge alarms if not). */
@@ -26,6 +50,7 @@ export interface NerState {
 let state: NerState = {
   status: "idle",
   progress: 0,
+  cachedBefore: modelCachedBefore(),
   modelRequests: 0,
   unexpectedRequests: 0,
   unexpectedHost: null,
@@ -78,7 +103,8 @@ export async function loadNer(): Promise<void> {
         }
       }),
     );
-    setState({ status: "ready", progress: 100 });
+    markModelCached();
+    setState({ status: "ready", progress: 100, cachedBefore: true });
   } catch {
     loadStarted = false; // allow a retry
     setState({ status: "error" });
