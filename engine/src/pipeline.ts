@@ -7,7 +7,7 @@ import type { AnonymizeResult, Recognizer, Span } from "./types";
 import { resolveOverlaps } from "./resolve";
 import { completeOccurrences } from "./occurrences";
 import { anonymize } from "./anonymize";
-import { manualSpans } from "./manual";
+import { manualSpans, type ManualInput } from "./manual";
 import { israeliIdRecognizer } from "./recognizers/israeliId";
 import { israeliPhoneRecognizer } from "./recognizers/israeliPhone";
 import { israeliCompanyRecognizer } from "./recognizers/israeliCompany";
@@ -68,6 +68,9 @@ export function anonymizeWith(text: string, extraSpans: readonly Span[]): Anonym
  * needs no model, so it is instant. `manualSpans` already covers every occurrence of each term, so no
  * occurrence-completion pass is needed.
  */
-export function anonymizeManualOnly(text: string, terms: readonly string[]): AnonymizeResult {
+export function anonymizeManualOnly(
+  text: string,
+  terms: readonly ManualInput[],
+): AnonymizeResult {
   return anonymize(text, resolveOverlaps(manualSpans(text, terms)));
 }

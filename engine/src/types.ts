@@ -59,6 +59,9 @@ export interface Span {
   readonly type: EntityType;
   /** 0..1 confidence. Checksum-validated deterministic matches report 1. */
   readonly score: number;
+  /** Optional custom placeholder label (ASCII/Latin) that overrides the type's default — set only by a
+   *  manual term the user named (e.g. "CLIENT" -> [CLIENT_1]). Absent for all automatic detections. */
+  readonly label?: string;
 }
 
 /**

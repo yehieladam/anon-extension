@@ -116,6 +116,29 @@ test("click-to-redact: click a word to redact it, click the token to undo (manua
   await expect(page.getByRole("button", { name: "[TERM_1]", exact: true })).toHaveCount(0);
 });
 
+test("custom name: a named manual term emits [CLIENT_1]; the label input blocks Hebrew/digits", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("checkbox").first().check(); // manual-only (model-free)
+  await page.fill("textarea", "התובע דוד כהן");
+  await page.getByRole("button", { name: "השחרת המסמך" }).click();
+  await page.getByRole("button", { name: "+ הוספה ידנית" }).click();
+  await page.fill("input[placeholder^='מילה או מספר']", "דוד כהן");
+
+  // The label field sanitizes to uppercase A–Z: Hebrew + digits are stripped so the user can't enter a
+  // name that would fail to render on the PDF.
+  const label = page.getByPlaceholder("שם (אנגלית)");
+  await label.fill("client123דוד");
+  await expect(label).toHaveValue("CLIENT");
+
+  await page.getByRole("button", { name: "הוספה", exact: true }).click();
+  await expect(page.getByRole("button", { name: "[CLIENT_1]", exact: true })).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(page.getByRole("button", { name: "[TERM_1]", exact: true })).toHaveCount(0);
+});
+
 test("@model docx + xlsx: redact in place and download a file without the originals", async ({
   page,
 }) => {
