@@ -123,9 +123,7 @@ export function App() {
   // internal-safety refusals SCAN_UNMAPPABLE_PII / SCAN_SELFVERIFY_FAILED).
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [scanNotice, setScanNotice] = useState<null | "lowQuality" | "unsafe">(null);
-  // A redacted PDF whose visual redaction could not be fully verified: the download is offered WITH a
-  // warning naming these terms to eyeball before sending (owner decision — informed choice, not a block).
-  const [pdfWarnTerms, setPdfWarnTerms] = useState<readonly string[] | null>(null);
+  // The redacted file bytes ready for download (the burned-token PDF / redacted office file).
   const [redacted, setRedacted] = useState<{ bytes: Uint8Array; name: string; mime: string } | null>(
     null,
   );
@@ -164,7 +162,6 @@ export function App() {
     setRedacted(null);
     setScannedNotice(false);
     setScanNotice(null); // a fresh result clears any leftover scan refusal from a prior file
-    setPdfWarnTerms(null);
   }, []);
 
   const onAnonymize = useCallback(async () => {
@@ -260,7 +257,7 @@ export function App() {
           }
         }
         setSource({ kind: "file", name: file.name, buffer });
-        const { result: anonymized, bytes, pdfUnverified } = await getEngine().redactFile(
+        const { result: anonymized, bytes } = await getEngine().redactFile(
           file.name,
           buffer,
           [],
@@ -272,7 +269,6 @@ export function App() {
         if (bytes) {
           setRedacted({ bytes, name: redactedName(file.name), mime: mimeFor(file.name) });
         }
-        if (pdfUnverified) setPdfWarnTerms(pdfUnverified.terms);
         if (!manualOnlyRef.current) {
           void loadNer();
         }
@@ -330,7 +326,7 @@ export function App() {
           }
           return;
         }
-        const { result: upgraded, bytes, pdfUnverified } = await getEngine().redactFile(
+        const { result: upgraded, bytes } = await getEngine().redactFile(
           source.name,
           source.buffer,
           manualTerms,
@@ -342,7 +338,6 @@ export function App() {
         if (bytes) {
           setRedacted({ bytes, name: redactedName(source.name), mime: mimeFor(source.name) });
         }
-        if (pdfUnverified) setPdfWarnTerms(pdfUnverified.terms);
       } catch {
         // The NER-pass redaction genuinely failed (e.g. the TEXT self-verify refused a leaky AI-text, or
         // an office self-verify). Never leave the earlier deterministic-only download in place — that
@@ -376,7 +371,7 @@ export function App() {
         if (source.kind === "text") {
           showResult(await getEngine().anonymizeSmart(source.text, terms, manualOnlyRef.current));
         } else {
-          const { result, bytes, pdfUnverified } = await getEngine().redactFile(
+          const { result, bytes } = await getEngine().redactFile(
             source.name,
             source.buffer,
             terms,
@@ -388,7 +383,6 @@ export function App() {
           if (bytes) {
             setRedacted({ bytes, name: redactedName(source.name), mime: mimeFor(source.name) });
           }
-          if (pdfUnverified) setPdfWarnTerms(pdfUnverified.terms);
         }
       } catch {
         // A manual term re-triggered redaction that failed — pull any stale download so the user never
@@ -808,14 +802,6 @@ export function App() {
                   {t("manual.add")}
                 </button>
               </div>
-              {pdfWarnTerms && pdfWarnTerms.length > 0 && (
-                <div
-                  className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-800"
-                  role="alert"
-                >
-                  {t("result.pdfUnverified", { terms: pdfWarnTerms.join(", ") })}
-                </div>
-              )}
               <div className="flex items-center gap-2">
                 {redacted &&
                   // A redacted FILE only has names removed once NER has settled. Never hand back the
