@@ -104,6 +104,9 @@ export function App() {
   // internal-safety refusals SCAN_UNMAPPABLE_PII / SCAN_SELFVERIFY_FAILED).
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [scanNotice, setScanNotice] = useState<null | "lowQuality" | "unsafe">(null);
+  // A redacted PDF whose visual redaction could not be fully verified: the download is offered WITH a
+  // warning naming these terms to eyeball before sending (owner decision — informed choice, not a block).
+  const [pdfWarnTerms, setPdfWarnTerms] = useState<readonly string[] | null>(null);
   const [redacted, setRedacted] = useState<{ bytes: Uint8Array; name: string; mime: string } | null>(
     null,
   );
@@ -136,6 +139,7 @@ export function App() {
     setRedacted(null);
     setScannedNotice(false);
     setScanNotice(null); // a fresh result clears any leftover scan refusal from a prior file
+    setPdfWarnTerms(null);
   }, []);
 
   const onAnonymize = useCallback(async () => {
@@ -228,11 +232,12 @@ export function App() {
           }
         }
         setSource({ kind: "file", name: file.name, buffer });
-        const { result: anonymized, bytes } = await getEngine().redactFile(file.name, buffer, []);
+        const { result: anonymized, bytes, pdfUnverified } = await getEngine().redactFile(file.name, buffer, []);
         showResult(anonymized);
         if (bytes) {
           setRedacted({ bytes, name: redactedName(file.name), mime: mimeFor(file.name) });
         }
+        if (pdfUnverified) setPdfWarnTerms(pdfUnverified.terms);
         void loadNer();
       } catch (error) {
         // A scanned/image PDF has no text layer — refuse with a specific notice instead of a falsely
@@ -244,8 +249,12 @@ export function App() {
           // A number produced by a formula can't be safely overlaid (recalc regenerates it) — refuse.
           setSource(null);
           setFormulaNotice(true);
-        } else if (error instanceof Error && error.message.includes("OFFICE_SELFVERIFY_FAILED")) {
-          // A detected value still survived somewhere in the file — refuse rather than hand back a leak.
+        } else if (
+          error instanceof Error &&
+          (error.message.includes("OFFICE_SELFVERIFY_FAILED") || error.message.includes("TEXT_SELFVERIFY_FAILED"))
+        ) {
+          // A detected value survived in the output (office file) or in the tokenized AI-text (PDF) — the
+          // AI-text is machine-consumed with no human review, so a leak there is a HARD refuse of both.
           setSource(null);
           setSelfVerifyNotice(true);
         } else {
@@ -282,7 +291,7 @@ export function App() {
           }
           return;
         }
-        const { result: upgraded, bytes } = await getEngine().redactFile(
+        const { result: upgraded, bytes, pdfUnverified } = await getEngine().redactFile(
           source.name,
           source.buffer,
           manualTerms,
@@ -294,10 +303,11 @@ export function App() {
         if (bytes) {
           setRedacted({ bytes, name: redactedName(source.name), mime: mimeFor(source.name) });
         }
+        if (pdfUnverified) setPdfWarnTerms(pdfUnverified.terms);
       } catch {
-        // The NER-pass redaction failed (e.g. the PDF self-verify refused a leaky result). Never leave
-        // the earlier deterministic-only download in place — that would hand back a file the user
-        // believes is fully redacted but whose names are not removed. Surface the error and pull it.
+        // The NER-pass redaction genuinely failed (e.g. the TEXT self-verify refused a leaky AI-text, or
+        // an office self-verify). Never leave the earlier deterministic-only download in place — that
+        // would hand back a file the user believes is fully redacted. Surface the error and pull it.
         if (!cancelled) {
           setFileError(true);
           setRedacted(null);
@@ -327,11 +337,12 @@ export function App() {
         if (source.kind === "text") {
           showResult(await getEngine().anonymizeSmart(source.text, terms));
         } else {
-          const { result, bytes } = await getEngine().redactFile(source.name, source.buffer, terms);
+          const { result, bytes, pdfUnverified } = await getEngine().redactFile(source.name, source.buffer, terms);
           showResult(result);
           if (bytes) {
             setRedacted({ bytes, name: redactedName(source.name), mime: mimeFor(source.name) });
           }
+          if (pdfUnverified) setPdfWarnTerms(pdfUnverified.terms);
         }
       } catch {
         // A manual term re-triggered redaction that failed — pull any stale download so the user never
@@ -739,6 +750,14 @@ export function App() {
                   {t("manual.add")}
                 </button>
               </div>
+              {pdfWarnTerms && pdfWarnTerms.length > 0 && (
+                <div
+                  className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-800"
+                  role="alert"
+                >
+                  {t("result.pdfUnverified", { terms: pdfWarnTerms.join(", ") })}
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 {redacted &&
                   // A redacted FILE only has names removed once NER has settled. Never hand back the
