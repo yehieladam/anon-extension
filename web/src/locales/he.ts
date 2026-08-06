@@ -71,6 +71,7 @@ export const he = {
     insured: "מבוטח",
     email: "אימייל",
     manual: "ידני",
+    number: "מספר",
   },
   manual: {
     add: "+ הוספה ידנית",

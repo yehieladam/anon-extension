@@ -1,95 +1,87 @@
 /**
- * Scan-mode PII detection (OCR Stage 3) — the SEPARATE entrypoint for the scanned-PDF path. Pure and
+ * Scan-mode PII detection (OCR Stage 3 + 6) — the SEPARATE entrypoint for the scanned-PDF path. Pure and
  * framework-free (no mupdf/tesseract), consuming OCR words+bboxes rather than glyph quads, so the
- * scan-only relaxations here can NEVER leak into the digital-text path (that path takes quads and never
- * imports this module — structural isolation, not a boolean flag that could be mis-set).
+ * scan-only relaxations here can NEVER leak into the digital-text path (structural isolation).
  *
- * It composes THREE detection contributors, all producing image-pixel boxes that union with standard
- * detection (over-coverage is safe by design — defense in depth):
- *   (A) STANDARD — the injected anonymize (NER names + deterministic valid-ID/phone/etc) on the OCR
- *       text; each match's char-range maps back to covering word boxes. Drives the UI/key. A match that
- *       maps to ZERO boxes is a PII we cannot cover → throw SCAN_UNMAPPABLE_PII (whole-file refuse,
- *       never silent-skip).
- *   (B) DIGIT-RUN RELAX — any 8-10 contiguous digits (checksum-optional), page-wide. Catches an
- *       unlabeled ID/phone the OCR misread digit-for-digit. Over-redacts pure-digit dates — accepted,
- *       the safe direction on an unreliable scan.
- *   (C) LABEL-ANCHOR — a PII label (lexicon), matched as a merged token or as a bare label spanning up
- *       to two consecutive words, redacts the label plus its same-line value neighbors content-blind.
- *       This closes the calibration worst case (an all-1s ID that OCR read as Hebrew letters
- *       `פוווווווו`, merged with its `מספרזהות` label into one token — zero digits, so (A)/(B) are blind).
- * (B)+(C) are redaction-only (NO key rows — a misread value has no recoverable original); only (A)
- * yields key rows. See docs/ocr-calibration.md.
+ * THE UNIFIED SPAN SET (Stage 6, the invariant): one canonical typed span set over the OCR text drives
+ * BOTH channels — the pixel rects AND the tokenized "Word for AI" text. So "the text hides everything the
+ * pixels hide" is true by construction, not by discipline. Three contributors, merged + overlap-resolved:
+ *   (A) STANDARD — the injected anonymize (NER names + deterministic valid-ID/phone) → typed char-spans.
+ *   (B) DIGIT-RUN RELAX — 8-10-digit runs, checksum-optional, page-wide → `IL_NUMBER` ([מספר_N]),
+ *       restorable to the OCR-read digits (over-redacted dates/amounts round-trip on restore).
+ *   (C) LABEL-ANCHOR — a PII label (lexicon) + its value, typed by the label ([ת״ז_N]/[שם_N]/[טלפון_N]),
+ *       content-blind (closes the all-1s-ID-read-as-letters case).
+ * Overlaps resolve by PRIORITY (validated A/labeled C = 3 > generic B = 1), so a doubly-caught value is
+ * ONE token. Boxes derive from the SAME spans (span char-range → covering words → union box). The caller
+ * (redactScan) tokenizes the document-level concatenation of these spans via `anonymize` for one unified
+ * key + numbering. See docs/ocr-calibration.md.
  */
-import type { AnonymizeResult } from "./types";
+import { PRIORITY, type AnonymizeResult, type EntityType, type Span } from "./types";
 import type { OcrBox, OcrPageResult, OcrWord } from "./ocrTypes";
-import { buildOcrText, unionRect, wordsForRange } from "./ocrMap";
+import { buildOcrText, unionRect, wordsForRange, type WordRange } from "./ocrMap";
 
-/** Thrown when a standard (A) detection maps to zero word boxes — a PII we cannot locate to redact. */
+/** Thrown when a detection span maps to zero word boxes — a PII we cannot locate to redact. */
 export const SCAN_UNMAPPABLE_PII = "SCAN_UNMAPPABLE_PII";
 
 /** Injected detector: standard anonymize over the OCR text (deterministic, plus NER when loaded). */
 export type Anonymize = (text: string) => AnonymizeResult | Promise<AnonymizeResult>;
 
-/** Result: image-pixel boxes to redact (one per contiguous run) + the standard result for UI/key. */
+/** Per-page detection: the pixel boxes, the unified typed spans over `text`, and this page's OCR text.
+ * redactScan redacts `boxes` per page and concatenates (`text`, shifted `spans`) for the document key. */
 export interface ScanDetection {
   readonly boxes: readonly OcrBox[];
-  readonly result: AnonymizeResult;
+  readonly spans: readonly Span[];
+  readonly text: string;
 }
 
-// --- (C) label lexicon -------------------------------------------------------------------------------
+// --- (C) label lexicon (each label typed so the anchored value tokenizes as the right entity) --------
 
-/** PII labels (Hebrew). Matched space-insensitively so a merged token `מספרזהות…` still hits `מספר זהות`
- * and a two-word split `תעודת` `זהות` rejoins to the compound label. */
-const LABELS: readonly string[] = [
-  "שם", "שם הלקוח", "שם המבקש", "שם מלא", "שם התובע", "שם הנתבע", // name
-  'תעודת זהות', 'ת"ז', "ת.ז", "מספר זהות", "מס' זהות", "מ.ז", // id
-  "טלפון", "טל'", "נייד", "פלאפון", "פקס", "מס' טלפון", // phone
+const LABELS: ReadonlyArray<{ readonly text: string; readonly type: EntityType }> = [
+  { text: "שם", type: "PERSON" }, { text: "שם הלקוח", type: "PERSON" }, { text: "שם המבקש", type: "PERSON" },
+  { text: "שם מלא", type: "PERSON" }, { text: "שם התובע", type: "PERSON" }, { text: "שם הנתבע", type: "PERSON" },
+  { text: 'תעודת זהות', type: "ISRAELI_ID" }, { text: 'ת"ז', type: "ISRAELI_ID" }, { text: "ת.ז", type: "ISRAELI_ID" },
+  { text: "מספר זהות", type: "ISRAELI_ID" }, { text: "מס' זהות", type: "ISRAELI_ID" }, { text: "מ.ז", type: "ISRAELI_ID" },
+  { text: "טלפון", type: "IL_PHONE" }, { text: "טל'", type: "IL_PHONE" }, { text: "נייד", type: "IL_PHONE" },
+  { text: "פלאפון", type: "IL_PHONE" }, { text: "פקס", type: "IL_PHONE" }, { text: "מס' טלפון", type: "IL_PHONE" },
 ];
-/** Longest label is two words (`תעודת זהות`, `שם הלקוח`) — bound the consecutive-word rejoin window. */
 const LABEL_MAX_WORDS = 2;
-/** A value is at most 3 tokens (a name); IDs/phones are one token. Bounds over-redaction. */
 const VALUE_MAX_WORDS = 3;
-/** Same-field gap: ≤ 1.5× the label's text height (size/DPI-invariant). */
 const GAP_FACTOR = 1.5;
 
-/** Strip bidi controls (OCR emits them around RTL runs) so matching is on the letters alone. */
 function stripBidi(text: string): string {
   return text.replace(/[‎‏‪-‮⁦-⁩]/g, "");
 }
 const norm = (text: string): string => stripBidi(text.normalize("NFC")).trim();
 const noSpace = (text: string): string => norm(text).replace(/\s+/g, "");
-const LABEL_KEYS: readonly string[] = LABELS.map(noSpace);
+const LABEL_KEYS: ReadonlyArray<{ readonly key: string; readonly type: EntityType }> = LABELS.map((l) => ({
+  key: noSpace(l.text),
+  type: l.type,
+}));
 
-/** Token starts with a label AND carries extra content → a merged label+value token (the d2 case). */
-function isMergedLabelToken(tokenText: string): boolean {
+/** If the token starts with a label key and carries extra content, the merged label+value type. */
+function mergedLabelType(tokenText: string): EntityType | null {
   const t = noSpace(tokenText);
-  return LABEL_KEYS.some((key) => t.length > key.length && t.startsWith(key));
+  return LABEL_KEYS.find((l) => t.length > l.key.length && t.startsWith(l.key))?.type ?? null;
 }
-/** Token (or rejoined run) IS a label, allowing a trailing colon. */
-function isLabelExact(text: string): boolean {
-  return LABEL_KEYS.includes(noSpace(text).replace(/:$/, ""));
+/** If the (single- or multi-word) text IS a label (allowing a trailing colon), its type. */
+function exactLabelType(text: string): EntityType | null {
+  const t = noSpace(text).replace(/:$/, "");
+  return LABEL_KEYS.find((l) => l.key === t)?.type ?? null;
 }
-/** A word that itself reads like a label — the value chase stops here (next field). */
-function looksLikeLabel(text: string): boolean {
-  return isLabelExact(text) || isMergedLabelToken(text);
-}
+const looksLikeLabel = (text: string): boolean => exactLabelType(text) !== null || mergedLabelType(text) !== null;
 
-// --- geometry helpers (image-pixel space) ------------------------------------------------------------
+// --- geometry (image-pixel space) --------------------------------------------------------------------
 
 const boxHeight = (b: OcrBox): number => b.y1 - b.y0;
-/** Same text line: vertical overlap covers at least half the shorter box. */
 function sameLine(a: OcrBox, b: OcrBox): boolean {
   const overlap = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
   return overlap > 0.5 * Math.min(boxHeight(a), boxHeight(b));
 }
-/** Horizontal edge-to-edge gap (0 if the boxes overlap in x). */
 function horizontalGap(a: OcrBox, b: OcrBox): number {
   return Math.max(0, Math.max(a.x0, b.x0) - Math.min(a.x1, b.x1));
 }
-
 const nonEmpty = (word: OcrWord | undefined): boolean => !!word && word.text.trim().length > 0;
 
-/** Are the given consecutive word indices one same-line, gap-close run (part of one label phrase)? */
 function contiguousRun(indices: readonly number[], words: readonly OcrWord[]): boolean {
   for (let k = 1; k < indices.length; k += 1) {
     const a = words[indices[k - 1]].bbox;
@@ -100,23 +92,18 @@ function contiguousRun(indices: readonly number[], words: readonly OcrWord[]): b
   }
   return true;
 }
-
-/** Same-line value words next to a label box: chase outward on each side while the gap stays within
- * 1.5x the label height and the word is not itself a label, capped at VALUE_MAX_WORDS total. */
 function valueNeighbors(labelBox: OcrBox, labelSet: ReadonlySet<number>, words: readonly OcrWord[]): number[] {
   const gapMax = GAP_FACTOR * boxHeight(labelBox);
-  const candidates = words
+  const cand = words
     .map((word, index) => ({ word, index }))
     .filter(({ word, index }) => !labelSet.has(index) && nonEmpty(word) && sameLine(labelBox, word.bbox));
-  const left = candidates.filter((c) => c.word.bbox.x1 <= labelBox.x0).sort((a, b) => b.word.bbox.x1 - a.word.bbox.x1);
-  const right = candidates.filter((c) => c.word.bbox.x0 >= labelBox.x1).sort((a, b) => a.word.bbox.x0 - b.word.bbox.x0);
+  const left = cand.filter((c) => c.word.bbox.x1 <= labelBox.x0).sort((a, b) => b.word.bbox.x1 - a.word.bbox.x1);
+  const right = cand.filter((c) => c.word.bbox.x0 >= labelBox.x1).sort((a, b) => a.word.bbox.x0 - b.word.bbox.x0);
   const picked: number[] = [];
   const chase = (chain: { word: OcrWord; index: number }[]): void => {
     let prev = labelBox;
     for (const { word, index } of chain) {
-      if (picked.length >= VALUE_MAX_WORDS || looksLikeLabel(word.text) || horizontalGap(prev, word.bbox) > gapMax) {
-        return;
-      }
+      if (picked.length >= VALUE_MAX_WORDS || looksLikeLabel(word.text) || horizontalGap(prev, word.bbox) > gapMax) return;
       picked.push(index);
       prev = word.bbox;
     }
@@ -126,78 +113,122 @@ function valueNeighbors(labelBox: OcrBox, labelSet: ReadonlySet<number>, words: 
   return picked;
 }
 
-/** Union the given word boxes into one covering box (throws on empty via unionRect — never a no-op). */
-function coverWords(indices: readonly number[], words: readonly OcrWord[]): OcrBox {
-  return unionRect(indices.map((i) => words[i].bbox));
+// --- span builders -----------------------------------------------------------------------------------
+
+const WEAK_SCORE = 0.5;
+/** Char-range span covering the given word indices (min start .. max end over their char ranges). */
+function spanOfWords(indices: readonly number[], ranges: readonly WordRange[], type: EntityType): Span {
+  const starts = indices.map((i) => ranges[i].start);
+  const ends = indices.map((i) => ranges[i].end);
+  return { start: Math.min(...starts), end: Math.max(...ends), type, score: WEAK_SCORE };
 }
 
 /**
- * (C) Label-anchored boxes: a merged label+value token, or a bare label (1-2 consecutive close words)
- * plus its same-line value neighbors. Exported so the redaction path can be exercised in isolation
- * (proving label-anchor's bbox actually removes real pixels, independent of the digit detectors).
+ * (C) label-anchored runs. `label` = the label word indices, `value` = its value word indices, typed by
+ * the label. The VALUE drives the text token (so the same phone dedups regardless of a טלפון/נייד label);
+ * the LABEL+VALUE drives the pixel box (whiting the label too, so re-OCR sees a blank block and cannot
+ * re-anchor — self-verify idempotency). A lone label with no readable value is NOT a run (not PII, and it
+ * avoids a false re-anchor on the label alone).
  */
-export function labelAnchorBoxes(words: readonly OcrWord[]): OcrBox[] {
-  const boxes: OcrBox[] = [];
+function labelAnchorRuns(words: readonly OcrWord[]): Array<{ label: number[]; value: number[]; type: EntityType }> {
+  const runs: Array<{ label: number[]; value: number[]; type: EntityType }> = [];
   for (let i = 0; i < words.length; i += 1) {
     if (!nonEmpty(words[i])) continue;
-    if (isMergedLabelToken(words[i].text)) {
-      boxes.push(words[i].bbox); // whole merged token (label + stuck value)
+    const mergedType = mergedLabelType(words[i].text);
+    if (mergedType) {
+      runs.push({ label: [], value: [i], type: mergedType }); // merged token = label+value inseparable
       continue;
     }
-    // Bare label spanning up to two consecutive close words → label + value neighbors.
     for (let span = Math.min(LABEL_MAX_WORDS, words.length - i); span >= 1; span -= 1) {
-      const indices = Array.from({ length: span }, (_, k) => i + k);
-      if (!indices.every((j) => nonEmpty(words[j])) || !contiguousRun(indices, words)) continue;
-      const joined = indices.map((j) => words[j].text).join(" ");
-      if (!isLabelExact(joined)) continue;
-      const labelBox = coverWords(indices, words);
-      const value = valueNeighbors(labelBox, new Set(indices), words);
-      boxes.push(coverWords([...indices, ...value], words));
+      const label = Array.from({ length: span }, (_, k) => i + k);
+      if (!label.every((j) => nonEmpty(words[j])) || !contiguousRun(label, words)) continue;
+      const type = exactLabelType(label.map((j) => words[j].text).join(" "));
+      if (!type) continue;
+      const labelBox = unionRect(label.map((j) => words[j].bbox));
+      const value = valueNeighbors(labelBox, new Set(label), words);
+      if (value.length > 0) {
+        runs.push({ label, value, type });
+      }
       i += span - 1;
       break;
     }
   }
-  return boxes;
+  return runs;
 }
 
-// --- (B) unlabeled digit-run relax -------------------------------------------------------------------
+/** Exported for isolated testing: the label-anchor pixel boxes (label+value unions, idempotency extent). */
+export function labelAnchorBoxes(words: readonly OcrWord[]): OcrBox[] {
+  return labelAnchorRuns(words).map((run) => unionRect([...run.label, ...run.value].map((i) => words[i].bbox)));
+}
 
-/** 8-10 digits with optional single space/hyphen/dot separators, not touching more digits or a slash
- * (a slash means a date like 01/01/2024, out of scope). Absorbs a ±1-digit OCR misread of a 9-digit ID
- * or a 10-digit phone; excludes 7-digit amounts and 4-5-digit docket numbers. */
+/** (B) 8-10 digits with optional single space/hyphen/dot separators, not touching more digits or a slash. */
 const DIGIT_RUN = /(?<![\d/])\d(?:[\s.-]?\d){7,9}(?![\d/])/g;
 
-// --- assembly ----------------------------------------------------------------------------------------
+/**
+ * Merge the A∪B∪C spans into a non-overlapping set by UNION (never drop-the-loser like resolveOverlaps):
+ * overlapping spans extend to cover both, typed by the highest-PRIORITY (score-tiebreak) member. This is
+ * the scan invariant's guarantee — a value caught by two mechanisms is one token AND its coverage is never
+ * reduced (so the pixel box, derived from the same span, can't lose a region a weaker span alone covered).
+ */
+function mergeSpans(spans: readonly Span[]): Span[] {
+  const sorted = [...spans].sort((a, b) => a.start - b.start || a.end - b.end);
+  const out: Span[] = [];
+  for (const span of sorted) {
+    const last = out[out.length - 1];
+    if (last && span.start < last.end) {
+      const better =
+        PRIORITY[span.type] > PRIORITY[last.type] ||
+        (PRIORITY[span.type] === PRIORITY[last.type] && span.score > last.score);
+      out[out.length - 1] = {
+        start: last.start,
+        end: Math.max(last.end, span.end),
+        type: better ? span.type : last.type,
+        score: Math.max(last.score, span.score),
+      };
+    } else {
+      out.push({ ...span });
+    }
+  }
+  return out;
+}
 
 /**
- * Detect PII on an OCR page and return the image-pixel boxes to redact plus the standard result. The
- * three contributors are unioned; standard (A) matches with zero coverage throw SCAN_UNMAPPABLE_PII.
+ * Detect PII on an OCR page → the unified typed span set + the pixel boxes derived from it + the page's
+ * OCR text. A span mapping to zero word boxes throws SCAN_UNMAPPABLE_PII (a PII we cannot cover).
  */
 export async function detectScanPii(page: OcrPageResult, anonymize: Anonymize): Promise<ScanDetection> {
   const words = page.words;
   const { text, ranges } = buildOcrText(words);
-  const result = await anonymize(text);
-  const boxes: OcrBox[] = [];
 
-  // (A) standard detections → covering boxes; zero coverage is a hard refusal, never a skip.
-  for (const span of result.spans) {
+  // (A) standard detection — typed, resolved char-spans (deterministic + NER + occurrence-completion).
+  const aResult = await anonymize(text);
+  const aSpans: Span[] = [...aResult.spans];
+
+  // (B) unlabeled digit-run relax → generic [מספר_N] spans.
+  const bSpans: Span[] = [];
+  for (const match of text.matchAll(DIGIT_RUN)) {
+    bSpans.push({ start: match.index, end: match.index + match[0].length, type: "IL_NUMBER", score: WEAK_SCORE });
+  }
+
+  // (C) label-anchored runs → VALUE-only spans (for the text token + dedup), plus LABEL+VALUE boxes below.
+  const cRuns = labelAnchorRuns(words);
+  const cSpans: Span[] = cRuns.map((run) => spanOfWords(run.value, ranges, run.type));
+
+  // Unify by UNION-merge so a value caught by two mechanisms is ONE token and coverage is never reduced.
+  // The tokenized text derives from this VALUE span set.
+  const spans = mergeSpans([...aSpans, ...bSpans, ...cSpans]);
+
+  // Pixel boxes: the value boxes from the unified spans, PLUS each C run's label+value box (idempotency).
+  const boxes: OcrBox[] = spans.map((span) => {
     const indices = wordsForRange(ranges, span.start, span.end);
     if (indices.length === 0) {
       throw new Error(SCAN_UNMAPPABLE_PII);
     }
-    boxes.push(coverWords(indices, words));
+    return unionRect(indices.map((i) => words[i].bbox));
+  });
+  for (const run of cRuns) {
+    boxes.push(unionRect([...run.label, ...run.value].map((i) => words[i].bbox)));
   }
 
-  // (B) unlabeled digit-run relax (page-wide, checksum-optional).
-  for (const match of text.matchAll(DIGIT_RUN)) {
-    const indices = wordsForRange(ranges, match.index, match.index + match[0].length);
-    if (indices.length > 0) {
-      boxes.push(coverWords(indices, words));
-    }
-  }
-
-  // (C) label-anchor.
-  boxes.push(...labelAnchorBoxes(words));
-
-  return { boxes, result };
+  return { boxes, spans, text };
 }

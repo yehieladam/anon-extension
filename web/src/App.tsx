@@ -64,6 +64,7 @@ const TYPE_LABEL: Record<EntityType, string> = {
   ORGANIZATION: "entity.org",
   LOCATION: "entity.place",
   MANUAL: "entity.manual",
+  IL_NUMBER: "entity.number",
 };
 
 /** Split on placeholder tokens and render each as a subtle pill so the redactions read clearly. */
@@ -776,7 +777,7 @@ export function App() {
                   ))}
                 {redacted &&
                   source?.kind === "file" &&
-                  !source.scan && // a scan's redaction is visual (no tokens) — its anonymizedText is empty
+                  result.anonymizedText.trim().length > 0 && // scans now produce tokenized text too (Stage 6)
                   source.name.toLowerCase().endsWith(".pdf") &&
                   ner.status !== "loading" && (
                     <button
