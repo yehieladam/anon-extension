@@ -104,6 +104,79 @@ function highlight(text: string): ReactNode[] {
   );
 }
 
+/** A clickable word/number run: letters/digits (Hebrew or Latin) with internal connectors kept whole
+ *  (so "052-1234567" / "14.07.1981" / "טל׳" stay one unit). */
+const WORD_RUN = /[0-9A-Za-z֐-׿]+(?:[.\-/'’׳״][0-9A-Za-z֐-׿]+)*/g;
+
+/**
+ * Render the anonymized text as an INTERACTIVE preview: already-redacted spans show as token pills
+ * (a manual one is clickable to UNDO), and every remaining word/number is clickable to redact it.
+ * This is how the user hand-picks redactions — clicking a word adds it as a manual term everywhere.
+ */
+function renderInteractive(
+  text: string,
+  manualTokenToTerm: ReadonlyMap<string, string>,
+  onPick: (word: string) => void,
+  onUndo: (term: string) => void,
+  pickTitle: string,
+  undoTitle: string,
+): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let key = 0;
+  for (const part of text.split(TOKEN_SPLIT)) {
+    if (IS_TOKEN.test(part)) {
+      const term = manualTokenToTerm.get(part);
+      if (term !== undefined) {
+        nodes.push(
+          <button
+            key={key++}
+            type="button"
+            title={undoTitle}
+            onClick={() => onUndo(term)}
+            className="mx-0.5 rounded-md bg-amber-100 px-1.5 py-0.5 text-[0.92em] font-medium text-amber-800 transition hover:bg-amber-200"
+          >
+            {part}
+          </button>,
+        );
+      } else {
+        nodes.push(
+          <mark
+            key={key++}
+            className="mx-0.5 rounded-md bg-ink/[0.06] px-1.5 py-0.5 text-[0.92em] font-medium text-ink"
+          >
+            {part}
+          </mark>,
+        );
+      }
+      continue;
+    }
+    let last = 0;
+    for (const match of part.matchAll(WORD_RUN)) {
+      const start = match.index;
+      const word = match[0];
+      if (start > last) {
+        nodes.push(<span key={key++}>{part.slice(last, start)}</span>);
+      }
+      nodes.push(
+        <button
+          key={key++}
+          type="button"
+          title={pickTitle}
+          onClick={() => onPick(word)}
+          className="rounded transition hover:bg-ink/[0.08] hover:ring-1 hover:ring-ink/20"
+        >
+          {word}
+        </button>,
+      );
+      last = start + word.length;
+    }
+    if (last < part.length) {
+      nodes.push(<span key={key++}>{part.slice(last)}</span>);
+    }
+  }
+  return nodes;
+}
+
 export function App() {
   const { t } = useTranslation();
   const net = useNetwork();
@@ -431,6 +504,35 @@ export function App() {
     },
     [manualTerms, reprocessManual],
   );
+
+  // Click-to-redact: clicking a word/number in the preview adds it as a manual term (redacted at every
+  // occurrence). No-op if it is already redacted, so a double-click can't create a duplicate.
+  const onPickWord = useCallback(
+    (word: string) => {
+      const term = word.trim();
+      if (term.length === 0 || manualTerms.includes(term)) {
+        return;
+      }
+      const terms = [...manualTerms, term];
+      setManualTerms(terms);
+      void reprocessManual(terms);
+    },
+    [manualTerms, reprocessManual],
+  );
+
+  // Which visible tokens came from a MANUAL pick — those are the ones a click can UNDO (auto-detected
+  // PII tokens are left static so a stray click can't un-redact real identifiers).
+  const manualTokenToTerm = useMemo(() => {
+    const map = new Map<string, string>();
+    if (result) {
+      for (const row of result.key) {
+        if (row.type === "MANUAL") {
+          map.set(row.placeholder, row.original);
+        }
+      }
+    }
+    return map;
+  }, [result]);
 
   // Retry loading the names model after it failed — the block is environmental (fetch/WASM), not the
   // file. On the resulting idle→loading→ready transition the re-run effect recomputes with names and
@@ -914,64 +1016,70 @@ export function App() {
               </div>
             )}
 
-            {result.key.length > 0 && (
-              <>
-                <div
-                  dir="rtl"
-                  className="whitespace-pre-wrap break-words rounded-2xl border border-hairline bg-surface p-5 text-[17px] leading-loose"
-                >
-                  {highlight(result.anonymizedText)}
-                </div>
-                {manualOnly ? (
-                  <p className="mt-3 rounded-xl bg-amber-50/60 px-3 py-2 text-xs leading-relaxed text-zinc-600">
-                    {t("result.noteManual")}
-                  </p>
-                ) : source?.kind === "file" && ner.status === "error" ? (
-                  // Names detection failed for a file — the authoritative message is the hard block, not
-                  // the ordinary "loading…" note (which would read as if a file is on its way).
-                  <p
-                    className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-800"
-                    role="alert"
-                  >
-                    {t("result.downloadBlockedNoNames")}
-                  </p>
-                ) : (
-                  <p className="mt-3 rounded-xl bg-amber-50/60 px-3 py-2 text-xs leading-relaxed text-zinc-600">
-                    {ner.status === "ready" ? t("result.noteNames") : t("result.note")}
-                  </p>
-                )}
+            <div
+              dir="rtl"
+              className="whitespace-pre-wrap break-words rounded-2xl border border-hairline bg-surface p-5 text-[17px] leading-loose"
+            >
+              {renderInteractive(
+                result.anonymizedText,
+                manualTokenToTerm,
+                onPickWord,
+                onRemoveManual,
+                t("result.clickRedact"),
+                t("result.clickUndo"),
+              )}
+            </div>
+            <p className="mt-2 px-2 text-xs text-zinc-400">{t("result.clickHint")}</p>
+            {manualOnly ? (
+              <p className="mt-3 rounded-xl bg-amber-50/60 px-3 py-2 text-xs leading-relaxed text-zinc-600">
+                {t("result.noteManual")}
+              </p>
+            ) : source?.kind === "file" && ner.status === "error" ? (
+              // Names detection failed for a file — the authoritative message is the hard block, not
+              // the ordinary "loading…" note (which would read as if a file is on its way).
+              <p
+                className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-800"
+                role="alert"
+              >
+                {t("result.downloadBlockedNoNames")}
+              </p>
+            ) : (
+              <p className="mt-3 rounded-xl bg-amber-50/60 px-3 py-2 text-xs leading-relaxed text-zinc-600">
+                {ner.status === "ready" ? t("result.noteNames") : t("result.note")}
+              </p>
+            )}
 
-                <div className="mt-4 rounded-2xl border border-hairline bg-surface p-4">
-                  <div className="text-[13px] font-medium text-ink">{t("key.title")}</div>
-                  <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("key.explain")}</p>
-                  <label className="mt-3 flex items-center gap-2 text-[13px] text-zinc-700">
-                    <input
-                      type="checkbox"
-                      checked={encryptKey}
-                      onChange={(event) => setEncryptKey(event.target.checked)}
-                      className="h-4 w-4 accent-ink"
-                    />
-                    {t("key.encrypt")}
-                  </label>
-                  {encryptKey && (
-                    <input
-                      type="password"
-                      value={keyPassphrase}
-                      onChange={(event) => setKeyPassphrase(event.target.value)}
-                      placeholder={t("key.passphrase")}
-                      className="mt-2 w-full rounded-xl border border-hairline bg-white px-3 py-2 text-[14px] outline-none placeholder:text-zinc-400"
-                    />
-                  )}
-                  <button
-                    type="button"
-                    onClick={onDownloadKey}
-                    disabled={encryptKey && keyPassphrase.length === 0}
-                    className="mt-3 min-h-[40px] rounded-full border border-hairline px-5 text-[14px] font-medium text-ink transition hover:bg-white disabled:opacity-40"
-                  >
-                    {t("key.download")}
-                  </button>
-                </div>
-              </>
+            {result.key.length > 0 && (
+              <div className="mt-4 rounded-2xl border border-hairline bg-surface p-4">
+                <div className="text-[13px] font-medium text-ink">{t("key.title")}</div>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("key.explain")}</p>
+                <label className="mt-3 flex items-center gap-2 text-[13px] text-zinc-700">
+                  <input
+                    type="checkbox"
+                    checked={encryptKey}
+                    onChange={(event) => setEncryptKey(event.target.checked)}
+                    className="h-4 w-4 accent-ink"
+                  />
+                  {t("key.encrypt")}
+                </label>
+                {encryptKey && (
+                  <input
+                    type="password"
+                    value={keyPassphrase}
+                    onChange={(event) => setKeyPassphrase(event.target.value)}
+                    placeholder={t("key.passphrase")}
+                    className="mt-2 w-full rounded-xl border border-hairline bg-white px-3 py-2 text-[14px] outline-none placeholder:text-zinc-400"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={onDownloadKey}
+                  disabled={encryptKey && keyPassphrase.length === 0}
+                  className="mt-3 min-h-[40px] rounded-full border border-hairline px-5 text-[14px] font-medium text-ink transition hover:bg-white disabled:opacity-40"
+                >
+                  {t("key.download")}
+                </button>
+              </div>
             )}
           </section>
         )}
