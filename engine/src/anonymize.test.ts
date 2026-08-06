@@ -1,5 +1,5 @@
 /**
- * anonymize — typed U+05F4 placeholders, per-type numbering in reading order, same value → same
+ * anonymize — typed Latin placeholders, per-type numbering in reading order, same value → same
  * placeholder, exact-surface key (so restore is lossless). Spans are built from substrings to keep
  * offsets honest.
  */
@@ -21,10 +21,10 @@ describe("anonymize", () => {
       spanOf(text, "052-1234567", "IL_PHONE"),
     ];
     const result = anonymize(text, spans);
-    expect(result.anonymizedText).toBe("הלקוח [ת״ז_1] בטלפון [טלפון_1]");
+    expect(result.anonymizedText).toBe("הלקוח [ID_1] בטלפון [PHONE_1]");
     expect(result.key).toEqual([
-      { placeholder: "[ת״ז_1]", original: "123456709", type: "ISRAELI_ID" },
-      { placeholder: "[טלפון_1]", original: "052-1234567", type: "IL_PHONE" },
+      { placeholder: "[ID_1]", original: "123456709", type: "ISRAELI_ID" },
+      { placeholder: "[PHONE_1]", original: "052-1234567", type: "IL_PHONE" },
     ]);
   });
 
@@ -35,7 +35,7 @@ describe("anonymize", () => {
       { start: text.lastIndexOf("123456709"), end: text.lastIndexOf("123456709") + 9, type: "ISRAELI_ID" as EntityType, score: 1 },
     ];
     const result = anonymize(text, spans);
-    expect(result.anonymizedText).toBe("[ת״ז_1] ואז שוב [ת״ז_1]");
+    expect(result.anonymizedText).toBe("[ID_1] ואז שוב [ID_1]");
     expect(result.key).toHaveLength(1);
   });
 
@@ -46,13 +46,15 @@ describe("anonymize", () => {
       spanOf(text, "876543208", "ISRAELI_ID"),
     ];
     const result = anonymize(text, spans);
-    expect(result.anonymizedText).toBe("ראשון [ת״ז_1] שני [ת״ז_2]");
+    expect(result.anonymizedText).toBe("ראשון [ID_1] שני [ID_2]");
   });
 
-  it("uses gershayim U+05F4 (not ASCII quote) in abbreviation labels", () => {
-    expect(placeholderFor("ISRAELI_ID", 1)).toBe("[ת״ז_1]");
-    expect(placeholderFor("IL_COMPANY", 3)).toBe("[ח״פ_3]");
+  it("uses ASCII/Latin labels (renders in the stamped PDF font; no quote to smart-quote)", () => {
+    expect(placeholderFor("ISRAELI_ID", 1)).toBe("[ID_1]");
+    expect(placeholderFor("IL_COMPANY", 3)).toBe("[COMPANY_3]");
+    // A Latin token has no quote/gershayim for ChatGPT or an RTL editor to mangle.
     expect(placeholderFor("ISRAELI_ID", 1)).not.toContain('"');
+    expect(placeholderFor("ISRAELI_ID", 1)).toMatch(/^\[[A-Z]+_\d+\]$/);
   });
 
   it("returns the text unchanged with an empty key when there are no spans", () => {
@@ -68,6 +70,6 @@ describe("anonymize", () => {
       spanOf(text, "876543208", "ISRAELI_ID"),
     ];
     const result = anonymize(text, spans);
-    expect(result.anonymizedText).toBe("[ת״ז_1] [אימייל_1] [ת״ז_2]");
+    expect(result.anonymizedText).toBe("[ID_1] [EMAIL_1] [ID_2]");
   });
 });

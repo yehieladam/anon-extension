@@ -9,7 +9,7 @@ import { textLeaks } from "./pdfVerify";
 describe("textLeaks — H1 fix (whole-word names, digit-bounded numbers)", () => {
   it("1. REGRESSION: a redacted name that only survives as a SUBSTRING of a legit word is NOT a leak", () => {
     // "כהן" was redacted at its whole-word occurrence; only "מכהן"/"הכהן" (legit words) remain.
-    const body = "התובע [שם_1] מכהן בתפקיד הכהן הגדול בבית המשפט";
+    const body = "התובע [NAME_1] מכהן בתפקיד הכהן הגדול בבית המשפט";
     expect(textLeaks(body, "", ["כהן"])).toEqual([]);
   });
 
@@ -43,15 +43,15 @@ describe("textLeaks — H1 fix (whole-word names, digit-bounded numbers)", () =>
   });
 
   it("8. tokenization-adjacency: a needle glued to a placeholder bracket is NOT a leak", () => {
-    // "…טל03-6489210…" -> the phone tokenizes to "[טלפון_4]", leaving "טל[טלפון_4]". "טל" was never a
+    // "…טל03-6489210…" -> the phone tokenizes to "[PHONE_4]", leaving "טל[PHONE_4]". "טל" was never a
     // whole word in the original (glued to the digit "0"); only the token forges a boundary. The AI-text
     // verify neutralizes brackets ("[" / "]" -> word char) before scanning, so this is not flagged.
-    const aiText = "מר [שם_2] טל[טלפון_4]".replace(/[[\]]/g, "x");
+    const aiText = "מר [NAME_2] טל[PHONE_4]".replace(/[[\]]/g, "x");
     expect(textLeaks(aiText, "", ["טל"])).toEqual([]);
   });
 
   it("9. a real name separated from a token by a space IS still a leak (neutralization is narrow)", () => {
-    const aiText = "[שם_1] טל הגיש".replace(/[[\]]/g, "x");
+    const aiText = "[NAME_1] טל הגיש".replace(/[[\]]/g, "x");
     expect(textLeaks(aiText, "", ["טל"])).toEqual(["טל"]);
   });
 });

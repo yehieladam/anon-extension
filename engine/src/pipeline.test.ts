@@ -20,7 +20,7 @@ describe("detectDeterministic", () => {
 describe("anonymizeDeterministic", () => {
   it("anonymizes and restores byte-exact (no model)", () => {
     const result = anonymizeDeterministic(DOC);
-    expect(result.anonymizedText).toContain("[ת״ז_1]");
+    expect(result.anonymizedText).toContain("[ID_1]");
     expect(result.anonymizedText).not.toContain("123456709");
     expect(restore(result.anonymizedText, result.key).restoredText).toBe(DOC);
   });
@@ -37,8 +37,8 @@ describe("anonymizeFull", () => {
       score: 0.99,
     };
     const result = anonymizeFull(text, [nerName]);
-    expect(result.anonymizedText).toContain("[שם_1]");
-    expect(result.anonymizedText).toContain("[ת״ז_1]");
+    expect(result.anonymizedText).toContain("[NAME_1]");
+    expect(result.anonymizedText).toContain("[ID_1]");
     expect(restore(result.anonymizedText, result.key).restoredText).toBe(text);
   });
 });

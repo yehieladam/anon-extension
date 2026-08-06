@@ -15,8 +15,8 @@ describe("buildTokenDocx", () => {
     const bytes = await buildTokenDocx(result.anonymizedText);
 
     const document = await (await JSZip.loadAsync(bytes)).file("word/document.xml")!.async("string");
-    expect(document).toContain("[טלפון_1]");
-    expect(document).toContain("[ת״ז_1]");
+    expect(document).toContain("[PHONE_1]");
+    expect(document).toContain("[ID_1]");
     expect(document).not.toContain("052-1234567");
   });
 

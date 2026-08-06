@@ -14,7 +14,7 @@ function base64Bytes(n: number): string {
 
 /** A valid envelope to mutate into malformed cases. */
 async function validEnvelope(): Promise<EncryptedKeyFile> {
-  return encryptKeyRows([{ placeholder: "[ת״ז_1]", original: "123456709", type: "ISRAELI_ID" }], "pw");
+  return encryptKeyRows([{ placeholder: "[ID_1]", original: "123456709", type: "ISRAELI_ID" }], "pw");
 }
 
 /** Cast a mutated object to the envelope type for the untrusted-input tests. */
@@ -23,9 +23,9 @@ function asEnvelope(value: unknown): EncryptedKeyFile {
 }
 
 const ROWS: KeyRow[] = [
-  { placeholder: "[ת״ז_1]", original: "123456709", type: "ISRAELI_ID" },
-  { placeholder: "[שם_1]", original: "ישראל ישראלי", type: "PERSON" },
-  { placeholder: "[טלפון_1]", original: "052-1234567", type: "IL_PHONE" },
+  { placeholder: "[ID_1]", original: "123456709", type: "ISRAELI_ID" },
+  { placeholder: "[NAME_1]", original: "ישראל ישראלי", type: "PERSON" },
+  { placeholder: "[PHONE_1]", original: "052-1234567", type: "IL_PHONE" },
 ];
 
 describe("keyCrypto", () => {

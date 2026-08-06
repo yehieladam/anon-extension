@@ -7,9 +7,9 @@
  * BOTH channels — the pixel rects AND the tokenized "Word for AI" text. So "the text hides everything the
  * pixels hide" is true by construction, not by discipline. Three contributors, merged + overlap-resolved:
  *   (A) STANDARD — the injected anonymize (NER names + deterministic valid-ID/phone) → typed char-spans.
- *   (B) DIGIT-RUN RELAX — 8-10-digit runs, checksum-optional, page-wide → `IL_NUMBER` ([מספר_N]),
+ *   (B) DIGIT-RUN RELAX — 8-10-digit runs, checksum-optional, page-wide → `IL_NUMBER` ([NUM_N]),
  *       restorable to the OCR-read digits (over-redacted dates/amounts round-trip on restore).
- *   (C) LABEL-ANCHOR — a PII label (lexicon) + its value, typed by the label ([ת״ז_N]/[שם_N]/[טלפון_N]),
+ *   (C) LABEL-ANCHOR — a PII label (lexicon) + its value, typed by the label ([ID_N]/[NAME_N]/[PHONE_N]),
  *       content-blind (closes the all-1s-ID-read-as-letters case).
  * Overlaps resolve by PRIORITY (validated A/labeled C = 3 > generic B = 1), so a doubly-caught value is
  * ONE token. Boxes derive from the SAME spans (span char-range → covering words → union box). The caller
@@ -204,7 +204,7 @@ export async function detectScanPii(page: OcrPageResult, anonymize: Anonymize): 
   const aResult = await anonymize(text);
   const aSpans: Span[] = [...aResult.spans];
 
-  // (B) unlabeled digit-run relax → generic [מספר_N] spans.
+  // (B) unlabeled digit-run relax → generic [NUM_N] spans.
   const bSpans: Span[] = [];
   for (const match of text.matchAll(DIGIT_RUN)) {
     bSpans.push({ start: match.index, end: match.index + match[0].length, type: "IL_NUMBER", score: WEAK_SCORE });

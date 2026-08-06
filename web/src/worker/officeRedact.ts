@@ -6,7 +6,7 @@
  * does the pure text math; this module is only the zip + XML plumbing, which needs a browser/worker.
  *
  * One detection pass runs over the whole document's concatenated text, so the placeholder numbering
- * ([שם_1] …) and the restore key are coherent across body, headers and footers. Values split across
+ * ([NAME_1] …) and the restore key are coherent across body, headers and footers. Values split across
  * several runs (Word does this constantly) are handled by the overlay char-walk.
  *
  * xlsx cell text is handled in every form: the shared-string table (`<si><t>`), inline worksheet

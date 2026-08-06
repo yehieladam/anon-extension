@@ -28,9 +28,9 @@ describe("applyOverlay", () => {
     // "052" | "-123" | "4567"  → value is the whole phone spanning all three segments
     const text = "052-1234567";
     const segments = tile([3, 4, 4]);
-    const reps: Replacement[] = [{ start: 0, end: 11, placeholder: "[טלפון_1]" }];
+    const reps: Replacement[] = [{ start: 0, end: 11, placeholder: "[PHONE_1]" }];
     // placeholder lands in the first segment; later segments lose their covered chars
-    expect(applyOverlay(text, segments, reps)).toEqual(["[טלפון_1]", "", ""]);
+    expect(applyOverlay(text, segments, reps)).toEqual(["[PHONE_1]", "", ""]);
   });
 
   it("keeps the tail of a segment after a replacement ends mid-segment", () => {

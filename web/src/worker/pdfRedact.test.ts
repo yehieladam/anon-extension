@@ -83,6 +83,15 @@ describe("redactPdf — true removal + in-production self-verify (real fixture)"
     expect(reExtracted.text).not.toContain("123456709");
     expect(reExtracted.text).not.toContain("052-1234567");
 
+    // BURN: each value's Latin token is now part of the page TEXT (AI-extractable, not an annotation),
+    // and adjacent tokens extract as separate tokens (not interleaved into garbage).
+    expect(reExtracted.text).toContain("[ID_1]");
+    expect(reExtracted.text).toContain("[PHONE_1]");
+    for (const row of result.key) {
+      expect(reExtracted.text).toContain(row.placeholder);
+      expect(row.placeholder).toMatch(/^\[[A-Z]+_\d+\]$/); // Latin vocab, renders in the stamped font
+    }
+
     // And gone from the raw bytes (incl. inflated streams) — the true gate.
     const b = await layerB(bytes, originals);
     expect(b.pass).toBe(true);
