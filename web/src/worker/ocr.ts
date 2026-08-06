@@ -10,11 +10,17 @@
  */
 import type { OcrPageResult, OcrWord } from "@engine/ocrTypes";
 
-// Same-origin vendored paths (see scripts/fetch-tesseract-assets.mjs). Absolute so they resolve the
-// same from the worker realm regardless of the document URL.
-const WORKER_PATH = "/vendor/tesseract/worker.min.js";
-const CORE_PATH = "/vendor/tesseract";
-const LANG_PATH = "/vendor/tessdata";
+// Same-origin vendored paths (see scripts/fetch-tesseract-assets.mjs). These are resolved to ABSOLUTE
+// URLs at runtime (below): tesseract.js creates its nested worker from a blob: URL, and importScripts of
+// a root-relative "/vendor/..." from that blob realm fails ("invalid URL") — an absolute origin-prefixed
+// URL resolves correctly. Computed lazily (not at module eval) so importing this file in node never
+// touches `self.location`.
+const VENDOR = "/vendor";
+/** Absolute origin-prefixed vendor URL — required for tesseract's blob-worker importScripts. */
+function vendorUrl(path: string): string {
+  const origin = (self as unknown as { location?: { origin?: string } }).location?.origin ?? "";
+  return `${origin}${VENDOR}${path}`;
+}
 
 // reason: tesseract.js's recognize result is loosely typed across v5 minor versions (words vs blocks);
 // we narrow the two shapes we read below rather than model the whole surface.
@@ -29,9 +35,9 @@ async function getOcrWorker(): Promise<TessWorker> {
     workerPromise = (async () => {
       const { createWorker } = await import("tesseract.js");
       const worker = await createWorker("heb+eng", 1, {
-        workerPath: WORKER_PATH,
-        corePath: CORE_PATH,
-        langPath: LANG_PATH,
+        workerPath: vendorUrl("/tesseract/worker.min.js"),
+        corePath: vendorUrl("/tesseract"),
+        langPath: vendorUrl("/tessdata"),
         gzip: true,
       });
       await worker.setParameters({
