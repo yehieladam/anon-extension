@@ -680,10 +680,10 @@ export function App() {
     if (!result) {
       return;
     }
-    await navigator.clipboard.writeText(result.anonymizedText);
+    await navigator.clipboard.writeText(t("result.promptPrefix") + result.anonymizedText);
     setCopied(true);
     window.setTimeout(() => setCopied(false), COPIED_RESET_MS);
-  }, [result]);
+  }, [result, t]);
 
   // Prefer an uploaded key (restore in a later/fresh session) over the in-memory session key.
   const activeKey = uploadedKey ?? result?.key ?? null;
