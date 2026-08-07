@@ -31,6 +31,8 @@ type Source =
 /** AGPL-3.0 §13: users interacting over a network must be offered the corresponding source. */
 const SOURCE_URL = "https://github.com/yehieladam/anon-extension";
 const COPIED_RESET_MS = 1500;
+/** How long the transient "N names added" notice (M4) stays before it fades out. */
+const NER_ADDED_NOTICE_MS = 4000;
 const MANUAL_ONLY_KEY = "mechikon.manualOnly";
 
 /** Read the persisted manual-only preference (default off = automatic detection). */
@@ -218,6 +220,10 @@ export function App() {
   const [source, setSource] = useState<Source | null>(null);
   const [status, setStatus] = useState<null | "working" | "reading">(null);
   const [result, setResult] = useState<AnonymizeResult | null>(null);
+  // Mirror the current result so the NER-upgrade effect can diff key length across the upgrade (M4)
+  // without adding `result` to its deps (which would re-fire the upgrade).
+  const resultRef = useRef(result);
+  resultRef.current = result;
   const [copied, setCopied] = useState(false);
   const [fileError, setFileError] = useState(false);
   const [scannedNotice, setScannedNotice] = useState(false);
@@ -287,6 +293,8 @@ export function App() {
     null,
   );
   const [restoreUnmatched, setRestoreUnmatched] = useState(0);
+  // M4: transient count of names the NER upgrade pass just added, so the silent upgrade is acknowledged.
+  const [nerAdded, setNerAdded] = useState<number | null>(null);
   // A whole-file restore downloads a file (no on-screen restoredText), so a boolean drives its success
   // confirmation line independently of the unmatched count (which can legitimately be 0).
   const [restoreFileDone, setRestoreFileDone] = useState(false);
@@ -456,6 +464,15 @@ export function App() {
     [busy, showResult, ner.status, runScanRedaction],
   );
 
+  // M4: acknowledge the silent NER upgrade by flashing how many keys it added over the deterministic pass.
+  const announceNerAdded = useCallback((upgradedKeyLength: number) => {
+    const added = upgradedKeyLength - (resultRef.current?.key.length ?? 0);
+    if (added > 0) {
+      setNerAdded(added);
+      window.setTimeout(() => setNerAdded(null), NER_ADDED_NOTICE_MS);
+    }
+  }, []);
+
   // When the model finishes loading, re-run whatever is on screen so names get redacted too.
   const previousNerStatus = useRef(ner.status);
   useEffect(() => {
@@ -483,6 +500,7 @@ export function App() {
             excludedRef.current,
           );
           if (!cancelled) {
+            announceNerAdded(upgraded.key.length);
             showResult(upgraded);
           }
           return;
@@ -499,6 +517,7 @@ export function App() {
         if (cancelled) {
           return;
         }
+        announceNerAdded(upgraded.key.length);
         showResult(upgraded);
         if (bytes) {
           setRedacted({ bytes, name: redactedName(source.name), mime: mimeFor(source.name) });
@@ -516,7 +535,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [ner.status, source, showResult, manualTerms, runScanRedaction]);
+  }, [ner.status, source, showResult, manualTerms, runScanRedaction, announceNerAdded]);
 
   // Re-run the current source with a new set of manual terms (add/remove a hand-picked redaction).
   const reprocessManual = useCallback(
@@ -861,32 +880,40 @@ export function App() {
           const unexpected = net.unexpected + ner.unexpectedRequests;
           const unexpectedHost = net.unexpectedHost ?? ner.unexpectedHost;
           const dotColor = unexpected > 0 ? "bg-red-500" : net.count === 0 ? "bg-emerald-500" : "bg-amber-500";
+          // Quiet badge: emerald TEXT (no filled pill) only at a true zero; benign counts stay zinc; the
+          // exfiltration alarm stays red. Links to the privacy section. The destination-verification
+          // logic (unexpected host) and the model-loaded status are preserved exactly.
+          const tone =
+            unexpected > 0 ? "text-red-600" : net.count === 0 ? "text-emerald-700" : "text-zinc-400";
           return (
-            <span
-              className={`inline-flex items-center gap-1.5 text-xs ${unexpected > 0 ? "text-red-600" : "text-zinc-400"}`}
+            <a
+              href="#privacy"
+              className={`inline-flex max-w-[60vw] items-center gap-1.5 text-xs ${tone}`}
               aria-live="polite"
             >
-              <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} aria-hidden="true" />
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} aria-hidden="true" />
               {unexpected > 0 ? (
-                <span className="font-medium">
+                <span className="truncate font-medium">
                   {t("trust.badge.unexpected", { host: unexpectedHost ?? "?" })}
                 </span>
               ) : (
-                <>
-                  {t("trust.badge.count", { count: net.count })}
+                <span className={net.count === 0 ? "font-medium" : "tnum"}>
+                  {net.count === 0
+                    ? t("trust.badge.count")
+                    : t("trust.badge.countN", { count: net.count })}
                   {/* Once the model is loaded, show a STATUS, not a rising request count: the count
                       includes cache-served requests on reload and misreads as a re-download (it is not —
                       the model is fetched once and served from the browser cache thereafter). */}
                   {ner.status === "ready" ? (
-                    <span className="text-zinc-300">· {t("trust.badge.modelLoaded")}</span>
+                    <span className="text-zinc-300"> · {t("trust.badge.modelLoaded")}</span>
                   ) : (
                     ner.modelRequests > 0 && (
-                      <span className="text-zinc-300">· {t("trust.badge.model", { count: ner.modelRequests })}</span>
+                      <span className="text-zinc-300"> · {t("trust.badge.model", { count: ner.modelRequests })}</span>
                     )
                   )}
-                </>
+                </span>
               )}
-            </span>
+            </a>
           );
         })()}
       </header>
@@ -907,6 +934,7 @@ export function App() {
           <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-zinc-500">
             {t("hero.subtitle")}
           </p>
+          <p className="mt-3 text-[15px] font-medium text-ink">{t("hero.taglineStrong")}</p>
         </section>
 
         <section className="mt-12">
@@ -1115,6 +1143,24 @@ export function App() {
                   ))}
               </div>
             </div>
+
+            {nerAdded !== null && nerAdded > 0 && (
+              <p
+                className="mb-3 inline-flex animate-[fadeIn_200ms_ease-out] items-center gap-1.5 text-[13px] font-medium text-emerald-700"
+                aria-live="polite"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M12 5v14M5 12h14"
+                    stroke="currentColor"
+                    strokeWidth="1.9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                {t("result.nerAdded", { count: nerAdded })}
+              </p>
+            )}
 
             {(showManualInput || manualTerms.length > 0) && (
               <div className="mb-3 rounded-2xl border border-hairline bg-surface p-3">
@@ -1739,8 +1785,11 @@ export function App() {
           </ol>
         </section>
 
-        <section className="mt-16 rounded-3xl bg-surface px-6 py-10 sm:px-10">
+        <section id="privacy" className="mt-16 scroll-mt-6 rounded-3xl bg-surface px-6 py-10 sm:px-10">
           <h2 className="text-center text-lg font-semibold tracking-tight">{t("trust.heading")}</h2>
+          <p className="mx-auto mt-2 max-w-md text-center text-[13px] leading-relaxed text-zinc-500">
+            {t("trust.subheading")}
+          </p>
           <div className="mt-8 grid gap-8 sm:grid-cols-3">
             {trustItems.map((item) => (
               <div key={item.key} className="text-center sm:text-right">

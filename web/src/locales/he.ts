@@ -184,7 +184,7 @@ export const he = {
   },
   trust: {
     badge: {
-      count: "{{count}} בקשות רשת",
+      count: "0 בקשות רשת. שום מידע לא נשלח.",
       countN: "{{count}} בקשות רשת",
       model: "מודל: {{count}}",
       modelLoaded: "מנוע השמות נטען, נשמר במטמון",
