@@ -58,4 +58,11 @@ describe("israeliIbanRecognizer", () => {
   it("does not detect a checksum-invalid IBAN-shaped string", () => {
     expect(israeliIbanRecognizer.recognize("IL620108000000099999998")).toHaveLength(0);
   });
+
+  it("detects a hyphen-grouped IBAN (M-format)", () => {
+    const text = "IL62-0108-0000-0009-9999-999";
+    const spans = israeliIbanRecognizer.recognize(text);
+    expect(spans).toHaveLength(1);
+    expect(text.slice(spans[0].start, spans[0].end)).toBe(text);
+  });
 });
