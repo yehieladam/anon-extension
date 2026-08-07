@@ -7,6 +7,7 @@ import {
   anonymizeDeterministic,
   anonymizeFull,
   anonymizeManualOnly,
+  anonymizeWith,
   detectDeterministic,
 } from "./pipeline";
 import { restore } from "./restore";
@@ -44,6 +45,19 @@ describe("anonymizeFull", () => {
     const result = anonymizeFull(text, [nerName]);
     expect(result.anonymizedText).toContain("[NAME_1]");
     expect(result.anonymizedText).toContain("[ID_1]");
+    expect(restore(result.anonymizedText, result.key).restoredText).toBe(text);
+  });
+});
+
+describe("anonymizeWith — H-manual (a shorter high-priority span must not erase a longer NER name)", () => {
+  it("keeps the non-overlapping remainder of a name a manual term overlaps", () => {
+    const text = "יוסי כהן"; // NER tags the whole name; the user manually redacts only "יוסי"
+    const person: Span = { start: 0, end: text.length, type: "PERSON", score: 0.99 };
+    const manual: Span = { start: 0, end: 4, type: "MANUAL", score: 1 };
+    const result = anonymizeWith(text, [person, manual]);
+    // BOTH words must end up redacted — the surname must not leak because the manual term overlapped.
+    expect(result.anonymizedText).not.toContain("יוסי");
+    expect(result.anonymizedText).not.toContain("כהן");
     expect(restore(result.anonymizedText, result.key).restoredText).toBe(text);
   });
 });

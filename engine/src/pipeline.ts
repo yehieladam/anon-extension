@@ -4,7 +4,7 @@
  * separately (it is async + needs the model): `anonymizeFull` merges NER spans when available.
  */
 import type { AnonymizeResult, Recognizer, Span } from "./types";
-import { resolveOverlaps } from "./resolve";
+import { resolveOverlaps, resolveOverlapsPreservingRemainders } from "./resolve";
 import { completeOccurrences } from "./occurrences";
 import { anonymize } from "./anonymize";
 import { normalizeForDetection, mapShadowSpan } from "./normalize";
@@ -83,7 +83,11 @@ export function anonymizeWith(
   const excludedSet = new Set(excluded);
   const isExcluded = (span: Span): boolean =>
     span.type !== "MANUAL" && excludedSet.has(text.slice(span.start, span.end));
-  const base = resolveOverlaps(
+  // Preserve remainders (H-manual): a shorter high-priority span (a manual term) overlapping a longer NER
+  // name must not erase the name's other words. Winners are identical to resolveOverlaps; only the
+  // non-overlapping remainder of a dropped span is added back.
+  const base = resolveOverlapsPreservingRemainders(
+    text,
     [...detectDeterministic(text), ...extraSpans].filter((span) => !isExcluded(span)),
   );
   // Redact every whole-word occurrence of each confirmed value, not only the tagged ones — otherwise a
