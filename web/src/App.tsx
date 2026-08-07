@@ -642,7 +642,7 @@ export function App() {
 
   const onAddManual = useCallback(() => {
     const value = manualInput.trim();
-    if (value.length === 0 || manualTerms.some((t) => t.value === value)) {
+    if (value.length === 0 || manualTerms.some((term) => term.value === value)) {
       setManualInput("");
       setManualLabel("");
       return;
@@ -657,7 +657,7 @@ export function App() {
 
   const onRemoveManual = useCallback(
     (value: string) => {
-      const terms = manualTerms.filter((t) => t.value !== value);
+      const terms = manualTerms.filter((term) => term.value !== value);
       setManualTerms(terms);
       void reprocessManual(terms);
     },
@@ -669,7 +669,7 @@ export function App() {
   const onPickWord = useCallback(
     (word: string) => {
       const value = word.trim();
-      if (value.length === 0 || manualTerms.some((t) => t.value === value)) {
+      if (value.length === 0 || manualTerms.some((term) => term.value === value)) {
         return;
       }
       const terms = [...manualTerms, { value }];
@@ -929,7 +929,7 @@ export function App() {
 
   return (
     <div dir="rtl" className="min-h-screen overflow-x-hidden bg-white text-ink">
-      <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
+      <header className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-1 px-6 py-5">
         <span className="text-[19px] font-semibold tracking-tight" dir="ltr">
           Mechikon
         </span>
@@ -948,7 +948,7 @@ export function App() {
           return (
             <a
               href="#privacy"
-              className={`inline-flex max-w-[60vw] items-center gap-1.5 text-xs ${tone}`}
+              className={`inline-flex min-h-[44px] max-w-full items-center gap-1.5 rounded text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20 ${tone}`}
               aria-live="polite"
             >
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} aria-hidden="true" />
@@ -1294,7 +1294,7 @@ export function App() {
               <div className="mb-3 rounded-2xl border border-hairline bg-surface p-3">
                 {showManualInput && (
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <input
                         dir="rtl"
                         value={manualInput}
@@ -1306,7 +1306,7 @@ export function App() {
                           }
                         }}
                         placeholder={t("manual.placeholder")}
-                        className="min-h-[44px] flex-1 rounded-xl border border-hairline bg-white px-3 text-[16px] outline-none focus-visible:ring-2 focus-visible:ring-ink/20 placeholder:text-zinc-400"
+                        className="min-h-[44px] w-full rounded-xl border border-hairline bg-white px-3 text-[16px] outline-none focus-visible:ring-2 focus-visible:ring-ink/20 placeholder:text-zinc-400 sm:w-auto sm:flex-1"
                       />
                       <input
                         dir="ltr"
@@ -1587,7 +1587,7 @@ export function App() {
                   </div>
                 )}
 
-                <label className="mt-3 flex items-center gap-2 text-[13px] text-zinc-700">
+                <label className="mt-3 flex min-h-[44px] cursor-pointer items-center gap-2 py-2 text-[13px] text-zinc-700">
                   <input
                     type="checkbox"
                     checked={encryptKey}
@@ -1613,7 +1613,7 @@ export function App() {
                         }
                       }}
                       placeholder={t("key.passphrase")}
-                      className="w-full rounded-xl border border-hairline bg-white px-3 py-2 pe-12 text-[16px] outline-none focus-visible:ring-2 focus-visible:ring-ink/20 placeholder:text-zinc-400"
+                      className="min-h-[44px] w-full rounded-xl border border-hairline bg-white px-3 py-2 pe-12 text-[16px] outline-none focus-visible:ring-2 focus-visible:ring-ink/20 placeholder:text-zinc-400"
                     />
                     <button
                       type="button"
