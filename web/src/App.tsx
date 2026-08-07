@@ -221,6 +221,8 @@ export function App() {
   const ner = useNer();
 
   const [input, setInput] = useState("");
+  // Drag-and-drop onto the input card (F2). Dropped files go through the existing onFile path.
+  const [dragging, setDragging] = useState(false);
   const [source, setSource] = useState<Source | null>(null);
   const [status, setStatus] = useState<null | "working" | "reading">(null);
   const [result, setResult] = useState<AnonymizeResult | null>(null);
@@ -942,7 +944,23 @@ export function App() {
         </section>
 
         <section className="mt-12">
-          <div className="rounded-3xl border border-hairline bg-white p-2 shadow-card transition focus-within:shadow-[0_1px_2px_rgba(0,0,0,0.05),0_16px_40px_-16px_rgba(0,0,0,0.18)]">
+          <div
+            onDragOver={(event) => {
+              if (busy) return;
+              event.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragging(false);
+              if (busy) return; // ignore drops while a redaction is in flight, like the upload button
+              void onFile(event.dataTransfer.files?.[0]);
+            }}
+            className={`rounded-3xl border bg-white p-2 shadow-card transition focus-within:shadow-[0_1px_2px_rgba(0,0,0,0.05),0_16px_40px_-16px_rgba(0,0,0,0.18)] ${
+              dragging ? "border-dashed border-ink bg-surface" : "border-hairline"
+            }`}
+          >
             <textarea
               dir="rtl"
               lang="he"
@@ -985,6 +1003,9 @@ export function App() {
               </button>
             </div>
           </div>
+          {input.length === 0 && !result && (
+            <p className="mt-2 px-2 text-xs text-zinc-400">{t("input.dropHint")}</p>
+          )}
           <label className="mt-3 flex min-h-[44px] cursor-pointer select-none items-center gap-2 px-2 text-[13px] text-zinc-600">
             <input
               type="checkbox"
