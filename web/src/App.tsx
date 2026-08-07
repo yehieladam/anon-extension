@@ -141,6 +141,7 @@ function renderInteractive(
   pickTitle: string,
   undoTitle: string,
   revealTitle: string,
+  manualAffordance: boolean,
 ): ReactNode[] {
   const nodes: ReactNode[] = [];
   let key = 0;
@@ -203,7 +204,15 @@ function renderInteractive(
           tabIndex={-1}
           title={pickTitle}
           onClick={() => onPick(word)}
-          className="rounded transition hover:bg-ink/[0.08] hover:ring-1 hover:ring-ink/20"
+          className={
+            manualAffordance
+              ? // Manual is the default mode: make every word visibly tappable so a first-time user
+                // discovers the click-to-hide interaction (a faint dashed underline that darkens on hover).
+                "cursor-pointer rounded underline decoration-dotted decoration-zinc-300 underline-offset-4 transition hover:bg-ink/[0.06] hover:decoration-ink"
+              : // Automatic mode: clicking a plain word only ADDS a manual redaction on top of detection,
+                // so keep it subtle (no affordance noise over already-clean text).
+                "rounded transition hover:bg-ink/[0.08] hover:ring-1 hover:ring-ink/20"
+          }
         >
           {word}
         </button>,
@@ -1157,7 +1166,9 @@ export function App() {
                 <span className="text-sm font-medium text-ink">
                   {result.key.length > 0
                     ? t("result.found", { count: result.key.length })
-                    : t("result.none")}
+                    : manualOnly
+                      ? t("result.manualEmpty")
+                      : t("result.none")}
                 </span>
                 {chips.map(([type, count]) => (
                   <span
@@ -1182,6 +1193,10 @@ export function App() {
               </div>
               <div className="flex items-center gap-2">
                 {redacted &&
+                  // Safety (manual mode, zero redactions): the "redacted" file would be byte-identical to
+                  // the original yet named "_מושחר" — a leak-shaped footgun. Withhold the download until
+                  // the user has hidden at least one value.
+                  !(manualOnly && result.key.length === 0) &&
                   // A redacted FILE only has names removed once NER has settled. Never hand back the
                   // file before that (trust: no second chance). While loading -> a pending pill; if the
                   // model FAILED -> withhold the download entirely and offer a retry (the deterministic
@@ -1311,16 +1326,40 @@ export function App() {
               </div>
             )}
 
+            {manualOnly && result.anonymizedText.trim().length > 0 && (
+              <div className="mb-2 flex items-center gap-2 rounded-xl border border-hairline bg-surface px-3 py-2 text-[13px] leading-relaxed text-zinc-600">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                  className="shrink-0 text-ink"
+                >
+                  <path
+                    d="M5 3l14 8-6 1.5L11 19 5 3z"
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span>{t("result.manualClickBanner")}</span>
+              </div>
+            )}
+
             <div className="relative">
               {result.anonymizedText.trim().length > 0 && (
                 <div className="absolute end-3 top-3 z-10 flex gap-1.5">
-                  <button
-                    type="button"
-                    onClick={onCopy}
-                    title={t("result.copy")}
-                    aria-label={copied ? t("result.copied") : t("result.copy")}
-                    className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink"
-                  >
+                  {/* Safety (manual mode, zero redactions): the copy would hand back untouched content, so
+                      hide it until the user has hidden at least one value. */}
+                  {!(manualOnly && result.key.length === 0) && (
+                    <button
+                      type="button"
+                      onClick={onCopy}
+                      title={t("result.copy")}
+                      aria-label={copied ? t("result.copied") : t("result.copy")}
+                      className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink"
+                    >
                     {copied ? (
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path
@@ -1342,7 +1381,8 @@ export function App() {
                         />
                       </svg>
                     )}
-                  </button>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setPreviewExpanded((v) => !v)}
@@ -1388,6 +1428,7 @@ export function App() {
                   t("result.clickRedact"),
                   t("result.clickUndo"),
                   t("result.clickReveal"),
+                  manualOnly,
                 )}
               </div>
             </div>
