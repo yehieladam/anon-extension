@@ -86,10 +86,13 @@ export function anonymizeWith(
   // Preserve remainders (H-manual): a shorter high-priority span (a manual term) overlapping a longer NER
   // name must not erase the name's other words. Winners are identical to resolveOverlaps; only the
   // non-overlapping remainder of a dropped span is added back.
+  // Re-filter the resolved set through isExcluded: resolveOverlapsPreservingRemainders can synthesize a
+  // remainder from a non-excluded parent whose surface value IS excluded (a revealed word that is the tail
+  // of an overlapped name), and that remainder would otherwise be re-redacted despite the user's reveal.
   const base = resolveOverlapsPreservingRemainders(
     text,
     [...detectDeterministic(text), ...extraSpans].filter((span) => !isExcluded(span)),
-  );
+  ).filter((span) => !isExcluded(span));
   // Redact every whole-word occurrence of each confirmed value, not only the tagged ones — otherwise a
   // name NER caught in one place but missed in another (or tagged only half of) leaks the rest.
   const completed = completeOccurrences(text, base).filter((span) => !isExcluded(span));

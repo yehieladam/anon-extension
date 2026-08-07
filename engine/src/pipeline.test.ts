@@ -62,6 +62,20 @@ describe("anonymizeWith — H-manual (a shorter high-priority span must not eras
   });
 });
 
+describe("anonymizeWith — M-3 (a synthesized remainder must respect the user's reveal)", () => {
+  it("keeps a revealed value in cleartext even when it is the remainder of an overlapped name", () => {
+    // The user revealed "כהן". A manual "משה" overlaps the PERSON name "משה כהן", so the name's
+    // remainder ("כהן") gets synthesized as its own span — which must ALSO honor the reveal.
+    const text = "משה כהן דיווח. כהן חתם.";
+    const manual: Span = { start: 0, end: 3, type: "MANUAL", score: 1 }; // "משה"
+    const person: Span = { start: 0, end: 7, type: "PERSON", score: 0.99 }; // "משה כהן"
+    const result = anonymizeWith(text, [person, manual], ["כהן"]);
+    // Both occurrences of the revealed surname must stay in cleartext (zero redactions of כהן).
+    const cleartextOccurrences = result.anonymizedText.split("כהן").length - 1;
+    expect(cleartextOccurrences).toBe(2);
+  });
+});
+
 describe("anonymizeManualOnly", () => {
   it("redacts ONLY the chosen terms and leaves auto-detected PII untouched", () => {
     // Deterministic PII (a valid ID) is present, but manual-only must NOT touch it.
