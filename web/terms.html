@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/logo.png" />
+    <meta name="description" content="מחיקון — תנאי שימוש ומדיניות." />
+    <title>מחיקון — תנאי שימוש</title>
+    <style>
+      /* Self-contained, CSP-clean (style-src 'self' 'unsafe-inline'; no external fonts/scripts).
+         System font stack matches the app (index.css) and renders Hebrew cleanly with no download. */
+      :root {
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        background: #ffffff;
+        color: #0a0a0a;
+        line-height: 1.75;
+      }
+      .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 48px 24px 96px;
+      }
+      a {
+        color: #0a0a0a;
+      }
+      .back {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        margin-bottom: 24px;
+        font-size: 14px;
+        color: #52525b;
+        text-decoration: none;
+      }
+      .back:hover {
+        color: #0a0a0a;
+      }
+      h1 {
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        margin: 0 0 8px;
+      }
+      .updated {
+        font-size: 14px;
+        color: #a1a1aa;
+        margin: 0 0 32px;
+      }
+      .note {
+        border-inline-start: 3px solid #fcd34d;
+        background: #fffbeb;
+        padding: 12px 16px;
+        border-radius: 12px;
+        font-size: 14px;
+        color: #92400e;
+        margin: 0 0 32px;
+      }
+      h2 {
+        font-size: 18px;
+        font-weight: 600;
+        margin: 32px 0 8px;
+      }
+      p {
+        margin: 0 0 12px;
+        font-size: 15px;
+      }
+      .clause {
+        color: #3f3f46;
+      }
+      strong {
+        font-weight: 600;
+        color: #0a0a0a;
+      }
+      footer {
+        margin-top: 48px;
+        padding-top: 24px;
+        border-top: 1px solid #ededed;
+        font-size: 14px;
+        color: #a1a1aa;
+      }
+      @media print {
+        .back {
+          display: none;
+        }
+        .wrap {
+          padding: 0;
+          max-width: none;
+        }
+        .note {
+          border: 1px solid #d4d4d8;
+          background: transparent;
+          color: #000;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <a class="back" href="/">חזרה למחיקון</a>
+
+      <h1>תנאי שימוש ומדיניות</h1>
+      <p class="updated">עדכון אחרון: 07/08/2026</p>
+
+      <div class="note">
+        מחיקון הוא כלי טכני לסיוע בהשחרת מידע, מסופק כמות שהוא (AS-IS) וללא אחריות. הזיהוי אינו מושלם,
+        חובה לעבור על הפלט ולאמת שכל פרט רגיש הוסר לפני שיתוף. אינו מהווה ייעוץ משפטי. השימוש באחריות
+        המשתמש בלבד.
+      </div>
+
+      <h2>1. כללי והגדרות</h2>
+      <p class="clause">
+        1.1. תנאי שימוש אלה ("<strong>התנאים</strong>") מסדירים את השימוש בכלי "מחיקון"
+        ("<strong>השירות</strong>"), המופעל על ידי BAI Solutions ("<strong>המפעיל</strong>",
+        "<strong>אנחנו</strong>").
+      </p>
+      <p class="clause">
+        1.2. עצם השימוש בשירות מהווה הסכמה מלאה לתנאים אלה. מי שאינו מסכים אינו רשאי להשתמש בשירות.
+      </p>
+      <p class="clause">
+        1.3. "<strong>מידע רגיש</strong>" הוא כל מידע אישי, מזהה או חסוי, לרבות אך לא רק: מספרי זהות,
+        טלפונים, מספרי חברה, חשבונות בנק, מספרי תיק, שמות, כתובות וכל מידע הכפוף לחוק הגנת הפרטיות או
+        ל-GDPR.
+      </p>
+
+      <h2>2. תיאור השירות ומגבלותיו</h2>
+      <p class="clause">
+        2.1. השירות הוא כלי טכני הפועל <strong>כולו בדפדפן המשתמש (client-side)</strong>. הטקסטים
+        והקבצים אינם נשלחים לשרת של המפעיל ואינם נשמרים אצלו. החריג היחיד הוא הורדה חד-פעמית של מודל
+        זיהוי שמות מספק צד-שלישי (Hugging Face), הכפופה לתנאי אותו ספק.
+      </p>
+      <p class="clause">
+        2.2. <strong>הזיהוי אינו מושלם ואינו מלא.</strong> השירות משתמש בזיהוי אוטומטי (כללים ומודל
+        למידת מכונה) שעלול לפספס מידע רגיש, לזהות שגוי, או להשאיר פרטים שלא הוסרו. השירות אינו מבטיח
+        הסרה מלאה של כל מידע רגיש.
+      </p>
+      <p class="clause">
+        2.3. <strong>חובת בדיקה.</strong> המשתמש מחויב לעבור בעצמו על הפלט לפני כל שיתוף או העברה,
+        ולוודא שכל מידע רגיש הוסר. השירות מספק כלי עזר בלבד, לא תחליף לבדיקה אנושית.
+      </p>
+      <p class="clause">
+        2.4. השירות ניתן <strong>כמות שהוא (AS-IS)</strong> וכפי שהוא זמין (AS-AVAILABLE), ללא
+        התחייבות לזמינות, לרציפות או להתאמה למטרה מסוימת.
+      </p>
+
+      <h2>3. מפתח השחזור — אחריות המשתמש</h2>
+      <p class="clause">
+        3.1. מנגנון השחזור מבוסס על "מפתח שחזור" הנוצר מקומית. <strong>המפתח הוא האמצעי היחיד להחזרת
+        הערכים המקוריים.</strong> ללא המפתח, לא ניתן לשחזר את המידע, לא על ידי המשתמש ולא על ידי
+        המפעיל.
+      </p>
+      <p class="clause">
+        3.2. המפתח קיים בכרטיסיית הדפדפן בלבד ונמחק עם סגירתה. שמירת המפתח, אבטחתו והזמינות שלו הן
+        <strong>באחריות המשתמש בלבד</strong>. אובדן המפתח שקול לאובדן בלתי הפיך של היכולת לשחזר,
+        והמפעיל אינו אחראי לכך.
+      </p>
+      <p class="clause">
+        3.3. במפתח מוצפן בסיסמה, אובדן הסיסמה שקול לאובדן המפתח. אין למפעיל דרך לשחזר סיסמה.
+      </p>
+
+      <h2>4. אחריות המשתמש והתחייבויותיו</h2>
+      <p class="clause">
+        4.1. המשתמש אחראי לכך שיש לו הרשאה חוקית לעבד את המידע שהוא מזין לשירות.
+      </p>
+      <p class="clause">
+        4.2. המשתמש אחראי לשימוש שהוא עושה בפלט, לרבות העברתו לכלי צד-שלישי (כגון ChatGPT, Claude)
+        הכפופים לתנאיהם ומדיניות הפרטיות שלהם, שאינם באחריות המפעיל.
+      </p>
+      <p class="clause">4.3. אין להשתמש בשירות למטרה בלתי חוקית או תוך הפרת זכויות של צד שלישי.</p>
+
+      <h2>5. היעדר אחריות והגבלתה</h2>
+      <p class="clause">
+        5.1. במידה המרבית המותרת בדין, המפעיל אינו נותן כל אחריות, מפורשת או משתמעת, לרבות בנוגע לדיוק,
+        לשלמות הזיהוי, להתאמה למטרה או לעמידה בדרישות רגולטוריות כלשהן (לרבות GDPR או חוק הגנת הפרטיות).
+      </p>
+      <p class="clause">
+        5.2. <strong>הגבלת אחריות.</strong> במידה המרבית המותרת בדין, לא יישא המפעיל באחריות לכל נזק,
+        ישיר, עקיף, תוצאתי או אחר, הנובע מהשימוש בשירות או מאי-יכולת להשתמש בו, לרבות ובמפורש נזק מדליפה
+        או חשיפה של מידע רגיש שלא הוסר, אובדן מידע, או אובדן מפתח שחזור.
+      </p>
+      <p class="clause">5.3. השימוש בשירות הוא על אחריותו הבלעדית של המשתמש.</p>
+
+      <h2>6. אינו ייעוץ משפטי</h2>
+      <p class="clause">
+        6.1. השירות הוא כלי טכני לסיוע בהשחרת מידע, ואינו מהווה ייעוץ משפטי, חוות דעת או תחליף לשיקול
+        דעת מקצועי. אין להסתמך עליו לצורך עמידה בחובה חוקית או רגולטורית.
+      </p>
+
+      <h2>7. פרטיות</h2>
+      <p class="clause">
+        7.1. המפעיל אינו אוסף מידע אישי דרך השירות: אין חשבון, אין עוגיות, אין אנליטיקות, אין טלמטריה.
+        העיבוד מקומי, והמסמכים אינם מגיעים למפעיל.
+      </p>
+
+      <h2>8. קניין רוחני ורישיון</h2>
+      <p class="clause">
+        8.1. קוד המקור של השירות מופץ ברישיון AGPL-3.0, וזמין לעיון בכתובת
+        <a href="https://github.com/yehieladam/anon-extension" target="_blank" rel="noreferrer"
+          >https://github.com/yehieladam/anon-extension</a
+        >. השימוש בקוד כפוף לתנאי הרישיון.
+      </p>
+
+      <h2>9. שינויים בתנאים ובשירות</h2>
+      <p class="clause">
+        9.1. המפעיל רשאי לעדכן תנאים אלה ואת השירות בכל עת. המשך שימוש לאחר עדכון מהווה הסכמה לתנאים
+        המעודכנים.
+      </p>
+
+      <h2>10. דין חל וסמכות שיפוט</h2>
+      <p class="clause">
+        10.1. על תנאים אלה יחולו דיני מדינת ישראל. סמכות השיפוט הבלעדית נתונה לבתי המשפט המוסמכים במחוז
+        תל אביב.
+      </p>
+
+      <h2>11. יצירת קשר</h2>
+      <p class="clause">
+        11.1. פניות:
+        <a href="mailto:yehiel@bai-solutions.com">yehiel@bai-solutions.com</a>.
+      </p>
+
+      <footer>מחיקון, כלי חינמי מבית BAI Solutions.</footer>
+    </div>
+  </body>
+</html>

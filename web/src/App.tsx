@@ -4,6 +4,7 @@ import * as Comlink from "comlink";
 import type { AnonymizeResult, EntityType, KeyRow } from "@engine/types";
 import type { ManualTerm } from "@engine/manual";
 import type { RestoreResult } from "@engine/restore";
+import { countPlaceholderTokens } from "@engine/restore";
 import { toKeyFile, fromKeyFile } from "@engine/key";
 import {
   encryptKeyRows,
@@ -31,14 +32,18 @@ type Source =
 /** AGPL-3.0 §13: users interacting over a network must be offered the corresponding source. */
 const SOURCE_URL = "https://github.com/yehieladam/anon-extension";
 const COPIED_RESET_MS = 1500;
+/** How long the transient "N names added" notice (M4) stays before it fades out. */
+const NER_ADDED_NOTICE_MS = 4000;
 const MANUAL_ONLY_KEY = "mechikon.manualOnly";
 
-/** Read the persisted manual-only preference (default off = automatic detection). */
+/** Read the persisted manual-only preference. Manual-only is the DEFAULT: the 185MB automatic-detection
+ * model is an explicit opt-in, never a forced first-load download. Only an explicit stored "0" (the user
+ * chose automatic) turns it off; an unset or any other value means manual. */
 function readManualOnly(): boolean {
   try {
-    return localStorage.getItem(MANUAL_ONLY_KEY) === "1";
+    return localStorage.getItem(MANUAL_ONLY_KEY) !== "0";
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -90,12 +95,23 @@ const TYPE_LABEL: Record<EntityType, string> = {
 /** Split on placeholder tokens and render each as a subtle pill so the redactions read clearly. */
 const TOKEN_SPLIT = /(\[[^[\]]*_\d+\])/g;
 const IS_TOKEN = /^\[[^[\]]*_\d+\]$/;
-function highlight(text: string): ReactNode[] {
-  return text.split(TOKEN_SPLIT).map((part, index) =>
-    IS_TOKEN.test(part) ? (
+
+/** Wrap each occurrence of an active-key ORIGINAL value in an emerald pill, so the restored text shows
+ *  at a glance which values came back (M2). Values are matched literally (longest first so a longer value
+ *  wins over a shorter substring); only values from the active key are highlighted, never arbitrary text. */
+function highlightValues(text: string, values: readonly string[]): ReactNode[] {
+  const unique = [...new Set(values)].filter((value) => value.length > 0).sort((a, b) => b.length - a.length);
+  if (unique.length === 0) {
+    return [<span key={0}>{text}</span>];
+  }
+  const escaped = unique.map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const splitter = new RegExp(`(${escaped.join("|")})`, "g");
+  const valueSet = new Set(unique);
+  return text.split(splitter).map((part, index) =>
+    valueSet.has(part) ? (
       <mark
         key={index}
-        className="mx-0.5 rounded-md bg-ink/[0.06] px-1.5 py-0.5 text-[0.92em] font-medium text-ink"
+        className="rounded-md bg-emerald-50 px-1 py-0.5 font-medium text-emerald-900"
       >
         {part}
       </mark>
@@ -126,6 +142,7 @@ function renderInteractive(
   pickTitle: string,
   undoTitle: string,
   revealTitle: string,
+  manualAffordance: boolean,
 ): ReactNode[] {
   const nodes: ReactNode[] = [];
   let key = 0;
@@ -179,12 +196,24 @@ function renderInteractive(
         nodes.push(<span key={key++}>{part.slice(last, start)}</span>);
       }
       nodes.push(
+        // tabIndex={-1} (G6): there can be hundreds of these per-word buttons; keeping them out of the
+        // tab order stops a keyboard user from being trapped tabbing through every word. The manual-add
+        // input is the keyboard path for redacting a missed term.
         <button
           key={key++}
           type="button"
+          tabIndex={-1}
           title={pickTitle}
           onClick={() => onPick(word)}
-          className="rounded transition hover:bg-ink/[0.08] hover:ring-1 hover:ring-ink/20"
+          className={
+            manualAffordance
+              ? // Manual is the default mode: make every word visibly tappable so a first-time user
+                // discovers the click-to-hide interaction (a faint dashed underline that darkens on hover).
+                "cursor-pointer rounded underline decoration-dotted decoration-zinc-300 underline-offset-4 transition hover:bg-ink/[0.06] hover:decoration-ink"
+              : // Automatic mode: clicking a plain word only ADDS a manual redaction on top of detection,
+                // so keep it subtle (no affordance noise over already-clean text).
+                "rounded transition hover:bg-ink/[0.08] hover:ring-1 hover:ring-ink/20"
+          }
         >
           {word}
         </button>,
@@ -204,10 +233,21 @@ export function App() {
   const ner = useNer();
 
   const [input, setInput] = useState("");
+  // Drag-and-drop onto the input card (F2). Dropped files go through the existing onFile path.
+  const [dragging, setDragging] = useState(false);
   const [source, setSource] = useState<Source | null>(null);
   const [status, setStatus] = useState<null | "working" | "reading">(null);
   const [result, setResult] = useState<AnonymizeResult | null>(null);
+  // Mirror the current result so the NER-upgrade effect can diff key length across the upgrade (M4)
+  // without adding `result` to its deps (which would re-fire the upgrade).
+  const resultRef = useRef(result);
+  resultRef.current = result;
   const [copied, setCopied] = useState(false);
+  // Clipboard writes can reject (permissions / no focus); surface a copy-failed hint so the user is not
+  // left thinking it worked. Separate flags for the two copy affordances so a message never shows in the
+  // wrong place.
+  const [copyError, setCopyError] = useState(false);
+  const [restoredCopyError, setRestoredCopyError] = useState(false);
   const [fileError, setFileError] = useState(false);
   const [scannedNotice, setScannedNotice] = useState(false);
   const [formulaNotice, setFormulaNotice] = useState(false);
@@ -223,6 +263,15 @@ export function App() {
   );
   const [restoreInput, setRestoreInput] = useState("");
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
+  // Guided restore (D): the panel is controlled so copy can auto-open it; refs let G7 reveal + focus it
+  // so an auto-open below the fold is not silent.
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  // Guided restore step 2: one segmented control picks text vs whole-file, so the two paths are never
+  // stacked. restoredCopied drives the restored-box corner copy icon (mirrors the redacted preview).
+  const [restoreMode, setRestoreMode] = useState<"text" | "file">("text");
+  const [restoredCopied, setRestoredCopied] = useState(false);
+  const restoreSectionRef = useRef<HTMLElement>(null);
+  const restoreTextareaRef = useRef<HTMLTextAreaElement>(null);
   // Manual redaction — user-added terms the automatic detectors missed.
   const [manualTerms, setManualTerms] = useState<ManualTerm[]>([]);
   const [manualInput, setManualInput] = useState("");
@@ -252,21 +301,46 @@ export function App() {
   const [pendingEnc, setPendingEnc] = useState<EncryptedKeyFile | null>(null);
   const [unlockPassphrase, setUnlockPassphrase] = useState("");
   const [keyError, setKeyError] = useState<"wrong" | "invalid" | null>(null);
+  // Restore-key download UX (C1): keyDownloaded flips the card to a calm confirmed state (B); it resets
+  // on every showResult because a new result mints a new key. keyEverDownloaded persists across that reset
+  // so a post-download key change shows a QUIET "key changed" delta (G4) instead of the full guidance
+  // again. showPass toggles the passphrase eye; passphraseMissing drives the inline hint when the user
+  // clicks download with encryption on and no passphrase (the button is never disabled).
+  const [keyDownloaded, setKeyDownloaded] = useState(false);
+  const [keyEverDownloaded, setKeyEverDownloaded] = useState(false);
+  const [showPass, setShowPass] = useState(false);
+  const [passphraseMissing, setPassphraseMissing] = useState(false);
+  const passphraseRef = useRef<HTMLInputElement>(null);
   // Restore a FILE (docx/txt with placeholders) back to its original values.
   const [restoreFileError, setRestoreFileError] = useState<"unsupported" | "nokey" | "generic" | null>(
     null,
   );
   const [restoreUnmatched, setRestoreUnmatched] = useState(0);
+  // M4: transient count of names the NER upgrade pass just added, so the silent upgrade is acknowledged.
+  const [nerAdded, setNerAdded] = useState<number | null>(null);
+  // A whole-file restore downloads a file (no on-screen restoredText), so a boolean drives its success
+  // confirmation line independently of the unmatched count (which can legitimately be 0).
+  const [restoreFileDone, setRestoreFileDone] = useState(false);
 
   const busy = status !== null;
 
-  const showResult = useCallback((anonymized: AnonymizeResult) => {
+  const showResult = useCallback((anonymized: AnonymizeResult, isNewDocument = false) => {
     setResult(anonymized);
-    setRestoreInput(anonymized.anonymizedText);
+    // The restore box starts EMPTY (guided flow): the user pastes the AI's answer, not the just-redacted
+    // text. The reworded restore.placeholder explains this.
     setRestoreResult(null);
     setRedacted(null);
     setScannedNotice(false);
     setScanNotice(null); // a fresh result clears any leftover scan refusal from a prior file
+    // Any result mints a NEW key, so an earlier download no longer covers it.
+    setKeyDownloaded(false);
+    setPassphraseMissing(false);
+    // Only a brand-new document (fresh anonymize/upload) forgets that a PRIOR document's key was
+    // downloaded, so the first-time key-loss warning shows again. A reprocess / NER-upgrade of the SAME
+    // document keeps keyEverDownloaded, so it shows the quiet "key changed" delta (G4).
+    if (isNewDocument) {
+      setKeyEverDownloaded(false);
+    }
   }, []);
 
   const onAnonymize = useCallback(async () => {
@@ -283,7 +357,10 @@ export function App() {
     try {
       // Manual-only: redact just the chosen terms, no model. Otherwise instant deterministic now, then
       // load NER for names (it upgrades the result when ready).
-      showResult(await getEngine().anonymizeSmart(text, [], manualOnlyRef.current, excludedRef.current));
+      showResult(
+        await getEngine().anonymizeSmart(text, [], manualOnlyRef.current, excludedRef.current),
+        true,
+      );
       if (!manualOnlyRef.current) {
         void loadNer();
       }
@@ -297,7 +374,13 @@ export function App() {
   // worker; the three refusal codes map to the two-tier notice; any failure pulls the download (never
   // hand back a scan we could not fully redact + verify).
   const runScanRedaction = useCallback(
-    async (name: string, buffer: ArrayBuffer, terms: readonly ManualTerm[], isCancelled?: () => boolean) => {
+    async (
+      name: string,
+      buffer: ArrayBuffer,
+      terms: readonly ManualTerm[],
+      isNewDocument = false,
+      isCancelled?: () => boolean,
+    ) => {
       setStatus("reading");
       setScanNotice(null);
       setFileError(false);
@@ -315,7 +398,7 @@ export function App() {
           excludedRef.current,
         );
         if (isCancelled?.()) return; // source changed / unmounted during the multi-second OCR
-        showResult(result);
+        showResult(result, isNewDocument);
         if (bytes) {
           setRedacted({ bytes, name: redactedName(name), mime: mimeFor(name) });
         }
@@ -365,7 +448,7 @@ export function App() {
           if (kind === "scan") {
             setSource({ kind: "file", name: file.name, buffer, scan: true });
             if (ner.status === "ready") {
-              await runScanRedaction(file.name, buffer, []);
+              await runScanRedaction(file.name, buffer, [], true);
             } else {
               void loadNer();
               setStatus(null);
@@ -383,7 +466,7 @@ export function App() {
           manualOnlyRef.current,
           excludedRef.current,
         );
-        showResult(anonymized);
+        showResult(anonymized, true);
         if (bytes) {
           setRedacted({ bytes, name: redactedName(file.name), mime: mimeFor(file.name) });
         }
@@ -418,6 +501,15 @@ export function App() {
     [busy, showResult, ner.status, runScanRedaction],
   );
 
+  // M4: acknowledge the silent NER upgrade by flashing how many keys it added over the deterministic pass.
+  const announceNerAdded = useCallback((upgradedKeyLength: number) => {
+    const added = upgradedKeyLength - (resultRef.current?.key.length ?? 0);
+    if (added > 0) {
+      setNerAdded(added);
+      window.setTimeout(() => setNerAdded(null), NER_ADDED_NOTICE_MS);
+    }
+  }, []);
+
   // When the model finishes loading, re-run whatever is on screen so names get redacted too.
   const previousNerStatus = useRef(ner.status);
   useEffect(() => {
@@ -434,7 +526,7 @@ export function App() {
         // A scan deferred until the model was ready: run its single OCR pass now (not the text/office
         // upgrade), sharing this effect's cancellation so a stale pass can't commit after source changes.
         if (source.kind === "file" && source.scan) {
-          await runScanRedaction(source.name, source.buffer, manualTerms, () => cancelled);
+          await runScanRedaction(source.name, source.buffer, manualTerms, false, () => cancelled);
           return;
         }
         if (source.kind === "text") {
@@ -445,6 +537,7 @@ export function App() {
             excludedRef.current,
           );
           if (!cancelled) {
+            announceNerAdded(upgraded.key.length);
             showResult(upgraded);
           }
           return;
@@ -461,6 +554,7 @@ export function App() {
         if (cancelled) {
           return;
         }
+        announceNerAdded(upgraded.key.length);
         showResult(upgraded);
         if (bytes) {
           setRedacted({ bytes, name: redactedName(source.name), mime: mimeFor(source.name) });
@@ -478,7 +572,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [ner.status, source, showResult, manualTerms, runScanRedaction]);
+  }, [ner.status, source, showResult, manualTerms, runScanRedaction, announceNerAdded]);
 
   // Re-run the current source with a new set of manual terms (add/remove a hand-picked redaction).
   const reprocessManual = useCallback(
@@ -489,7 +583,7 @@ export function App() {
       // A scan must re-run through the OCR pass (with scanOcr), never the text path — otherwise the
       // re-run hits NO_TEXT_LAYER and destroys the already-good redacted download.
       if (source.kind === "file" && source.scan) {
-        await runScanRedaction(source.name, source.buffer, terms);
+        await runScanRedaction(source.name, source.buffer, terms, false);
         return;
       }
       setStatus(source.kind === "file" ? "reading" : "working");
@@ -548,7 +642,7 @@ export function App() {
 
   const onAddManual = useCallback(() => {
     const value = manualInput.trim();
-    if (value.length === 0 || manualTerms.some((t) => t.value === value)) {
+    if (value.length === 0 || manualTerms.some((term) => term.value === value)) {
       setManualInput("");
       setManualLabel("");
       return;
@@ -563,7 +657,7 @@ export function App() {
 
   const onRemoveManual = useCallback(
     (value: string) => {
-      const terms = manualTerms.filter((t) => t.value !== value);
+      const terms = manualTerms.filter((term) => term.value !== value);
       setManualTerms(terms);
       void reprocessManual(terms);
     },
@@ -575,7 +669,7 @@ export function App() {
   const onPickWord = useCallback(
     (word: string) => {
       const value = word.trim();
-      if (value.length === 0 || manualTerms.some((t) => t.value === value)) {
+      if (value.length === 0 || manualTerms.some((term) => term.value === value)) {
         return;
       }
       const terms = [...manualTerms, { value }];
@@ -622,25 +716,43 @@ export function App() {
   }, []);
 
   const onDownload = useCallback(() => {
-    if (!redacted) {
+    // Defense-in-depth: never hand back a file while busy, and never in manual mode with zero redactions
+    // (the "redacted" file would be byte-identical to the original yet named "_מושחר"). The JSX also
+    // hides this button in that state and disables it while busy.
+    if (!redacted || busy || (manualOnlyRef.current && (resultRef.current?.key.length ?? 0) === 0)) {
       return;
     }
     // reason: Comlink returns a Uint8Array<ArrayBufferLike>, which TS 5.7 will not narrow to the
     // ArrayBuffer-backed view BlobPart wants; the bytes are a plain copy, so the cast is safe.
     const blob = new Blob([redacted.bytes as BlobPart], { type: redacted.mime });
     downloadBlob(blob, redacted.name);
-  }, [redacted]);
+  }, [redacted, busy]);
 
-  const onDownloadKey = useCallback(async () => {
-    if (!result || result.key.length === 0) {
-      return;
-    }
-    const content =
-      encryptKey && keyPassphrase.length > 0
+  const onDownloadKey = useCallback(
+    async (plain = false) => {
+      if (!result || result.key.length === 0) {
+        return;
+      }
+      // Encryption is the safe default. If it is on with no passphrase, do NOT silently block (the old
+      // disabled button was a data-loss trap): focus the field and show an inline hint. The "download
+      // without encryption" link passes plain=true to take the unencrypted path deliberately.
+      if (!plain && encryptKey && keyPassphrase.length === 0) {
+        setPassphraseMissing(true);
+        passphraseRef.current?.focus();
+        return;
+      }
+      const encrypt = encryptKey && !plain && keyPassphrase.length > 0;
+      const content = encrypt
         ? JSON.stringify(await encryptKeyRows(result.key, keyPassphrase), null, 2)
         : toKeyFile(result.key);
-    downloadBlob(new Blob([content], { type: "application/json" }), "מפתח-שחזור.json");
-  }, [result, encryptKey, keyPassphrase]);
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadBlob(new Blob([content], { type: "application/json" }), `מפתח-שחזור-${stamp}.json`);
+      setPassphraseMissing(false);
+      setKeyDownloaded(true);
+      setKeyEverDownloaded(true);
+    },
+    [result, encryptKey, keyPassphrase],
+  );
 
   const onUploadKey = useCallback(async (file: File | undefined) => {
     if (!file) {
@@ -676,22 +788,77 @@ export function App() {
     }
   }, [pendingEnc, unlockPassphrase]);
 
+  // Open the restore panel and reveal it (G7): after the controlled <details> paints, scroll the section
+  // into view and focus the restore textarea so an auto-open (or the bridge link) is never a silent
+  // below-the-fold change. Honor prefers-reduced-motion for the scroll.
+  const openRestore = useCallback(() => {
+    // Always land on the text tab: every caller (copy, bridge, the returned-from-AI offer) brings text
+    // to restore, and the G7 focus below targets the text textarea.
+    setRestoreMode("text");
+    setRestoreOpen(true);
+    requestAnimationFrame(() => {
+      const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+      restoreSectionRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+      restoreTextareaRef.current?.focus({ preventScroll: true });
+    });
+  }, []);
+
   const onCopy = useCallback(async () => {
-    if (!result) {
+    // Defense-in-depth: never copy while busy, and never in manual mode with zero redactions (the text
+    // would be the untouched original). The JSX also hides the button + disables it while busy.
+    if (!result || busy || (manualOnlyRef.current && result.key.length === 0)) {
       return;
     }
-    await navigator.clipboard.writeText(t("result.promptPrefix") + result.anonymizedText);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), COPIED_RESET_MS);
-  }, [result, t]);
+    setCopyError(false);
+    // The user is mid-round-trip: open the restore flow regardless of whether the clipboard write below
+    // succeeds, so a clipboard rejection does not also swallow the navigation.
+    openRestore();
+    try {
+      await navigator.clipboard.writeText(t("result.promptPrefix") + result.anonymizedText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), COPIED_RESET_MS);
+    } catch {
+      setCopyError(true);
+    }
+  }, [result, busy, t, openRestore]);
 
   // Prefer an uploaded key (restore in a later/fresh session) over the in-memory session key.
   const activeKey = uploadedKey ?? result?.key ?? null;
+
+  // M1: text pasted into the MAIN input that carries 2+ placeholder tokens is almost certainly an AI
+  // answer coming back, not a document to redact. Offer to route it into the restore flow instead of
+  // silently re-redacting the tokens.
+  const looksReturnedFromAi = useMemo(() => countPlaceholderTokens(input) >= 2, [input]);
 
   const onRestore = useCallback(async () => {
     const restored = await getEngine().restore(restoreInput, activeKey ?? []);
     setRestoreResult(restored);
   }, [restoreInput, activeKey]);
+
+  // Copy the restored (real-value) text — a plain copy, no AI-prompt prefix, since this is the final
+  // output for the user. Mirrors the redacted preview's corner icon.
+  const onCopyRestored = useCallback(async () => {
+    if (!restoreResult) {
+      return;
+    }
+    setRestoredCopyError(false);
+    try {
+      await navigator.clipboard.writeText(restoreResult.restoredText);
+      setRestoredCopied(true);
+      window.setTimeout(() => setRestoredCopied(false), COPIED_RESET_MS);
+    } catch {
+      setRestoredCopyError(true);
+    }
+  }, [restoreResult]);
+
+  // M2 climax count: how many tokens in the pasted text were actually restored (placeholders present
+  // minus the ones with no key match). Clamped at 0.
+  const restoredCount = useMemo(() => {
+    if (!restoreResult) {
+      return 0;
+    }
+    return Math.max(0, countPlaceholderTokens(restoreInput) - restoreResult.unmatched.length);
+  }, [restoreResult, restoreInput]);
 
   const onRestoreFile = useCallback(
     async (file: File | undefined) => {
@@ -700,6 +867,7 @@ export function App() {
       }
       setRestoreFileError(null);
       setRestoreUnmatched(0);
+      setRestoreFileDone(false);
       if (!activeKey || activeKey.length === 0) {
         setRestoreFileError("nokey");
         return;
@@ -714,6 +882,7 @@ export function App() {
             : `${file.name.slice(0, dot)}_משוחזר${file.name.slice(dot)}`;
         downloadBlob(new Blob([bytes as BlobPart], { type: mimeFor(file.name) }), name);
         setRestoreUnmatched(unmatched.length);
+        setRestoreFileDone(true);
       } catch (error) {
         setRestoreFileError(
           error instanceof Error && error.message.includes("RESTORE_UNSUPPORTED")
@@ -759,8 +928,8 @@ export function App() {
   ] as const;
 
   return (
-    <div dir="rtl" className="min-h-screen bg-white text-ink">
-      <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
+    <div dir="rtl" className="min-h-screen overflow-x-hidden bg-white text-ink">
+      <header className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-1 px-6 py-5">
         <span className="text-[19px] font-semibold tracking-tight" dir="ltr">
           Mechikon
         </span>
@@ -771,32 +940,40 @@ export function App() {
           const unexpected = net.unexpected + ner.unexpectedRequests;
           const unexpectedHost = net.unexpectedHost ?? ner.unexpectedHost;
           const dotColor = unexpected > 0 ? "bg-red-500" : net.count === 0 ? "bg-emerald-500" : "bg-amber-500";
+          // Quiet badge: emerald TEXT (no filled pill) only at a true zero; benign counts stay zinc; the
+          // exfiltration alarm stays red. Links to the privacy section. The destination-verification
+          // logic (unexpected host) and the model-loaded status are preserved exactly.
+          const tone =
+            unexpected > 0 ? "text-red-600" : net.count === 0 ? "text-emerald-700" : "text-zinc-400";
           return (
-            <span
-              className={`inline-flex items-center gap-1.5 text-xs ${unexpected > 0 ? "text-red-600" : "text-zinc-400"}`}
+            <a
+              href="#privacy"
+              className={`inline-flex min-h-[44px] max-w-full items-center gap-1.5 rounded text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20 ${tone}`}
               aria-live="polite"
             >
-              <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} aria-hidden="true" />
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} aria-hidden="true" />
               {unexpected > 0 ? (
-                <span className="font-medium">
+                <span className="truncate font-medium">
                   {t("trust.badge.unexpected", { host: unexpectedHost ?? "?" })}
                 </span>
               ) : (
-                <>
-                  {t("trust.badge.count", { count: net.count })}
+                <span className={net.count === 0 ? "font-medium" : "tnum"}>
+                  {net.count === 0
+                    ? t("trust.badge.count")
+                    : t("trust.badge.countN", { count: net.count })}
                   {/* Once the model is loaded, show a STATUS, not a rising request count: the count
                       includes cache-served requests on reload and misreads as a re-download (it is not —
                       the model is fetched once and served from the browser cache thereafter). */}
                   {ner.status === "ready" ? (
-                    <span className="text-zinc-300">· {t("trust.badge.modelLoaded")}</span>
+                    <span className="text-zinc-300"> · {t("trust.badge.modelLoaded")}</span>
                   ) : (
                     ner.modelRequests > 0 && (
-                      <span className="text-zinc-300">· {t("trust.badge.model", { count: ner.modelRequests })}</span>
+                      <span className="text-zinc-300"> · {t("trust.badge.model", { count: ner.modelRequests })}</span>
                     )
                   )}
-                </>
+                </span>
               )}
-            </span>
+            </a>
           );
         })()}
       </header>
@@ -817,10 +994,65 @@ export function App() {
           <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-zinc-500">
             {t("hero.subtitle")}
           </p>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-zinc-400">
+            {t("hero.subtitleSmall")}
+          </p>
+          <p className="mt-3 text-[15px] font-medium text-ink">{t("hero.taglineStrong")}</p>
         </section>
 
         <section className="mt-12">
-          <div className="rounded-3xl border border-hairline bg-white p-2 shadow-card transition focus-within:shadow-[0_1px_2px_rgba(0,0,0,0.05),0_16px_40px_-16px_rgba(0,0,0,0.18)]">
+          <div className="mb-3 flex flex-col items-start gap-1 px-1">
+            <div
+              className="inline-flex rounded-full border border-hairline bg-surface p-0.5"
+              role="group"
+              aria-label={t("input.modeLabel")}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  if (manualOnly) onToggleManualOnly();
+                }}
+                disabled={busy}
+                aria-pressed={!manualOnly}
+                className={`min-h-[44px] rounded-full px-4 text-[13px] font-medium transition disabled:opacity-40 ${
+                  !manualOnly ? "bg-ink text-white" : "text-zinc-600 hover:text-ink"
+                }`}
+              >
+                {t("input.modeAuto")}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!manualOnly) onToggleManualOnly();
+                }}
+                disabled={busy}
+                aria-pressed={manualOnly}
+                className={`min-h-[44px] rounded-full px-4 text-[13px] font-medium transition disabled:opacity-40 ${
+                  manualOnly ? "bg-ink text-white" : "text-zinc-600 hover:text-ink"
+                }`}
+              >
+                {t("input.modeManual")}
+              </button>
+            </div>
+            {manualOnly && <p className="px-1 text-xs text-zinc-400">{t("input.modeManualHint")}</p>}
+          </div>
+          <div
+            onDragOver={(event) => {
+              if (busy) return;
+              event.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragging(false);
+              if (busy) return; // ignore drops while a redaction is in flight, like the upload button
+              void onFile(event.dataTransfer.files?.[0]);
+            }}
+            className={`rounded-3xl border bg-white p-2 shadow-card transition focus-within:shadow-[0_1px_2px_rgba(0,0,0,0.05),0_16px_40px_-16px_rgba(0,0,0,0.18)] ${
+              dragging ? "border-dashed border-ink bg-surface" : "border-hairline"
+            }`}
+          >
             <textarea
               dir="rtl"
               lang="he"
@@ -830,7 +1062,7 @@ export function App() {
               className="min-h-[168px] w-full resize-none rounded-2xl bg-transparent p-4 text-[17px] leading-relaxed outline-none placeholder:text-zinc-400"
               placeholder={t("input.paste.placeholder")}
             />
-            <div className="flex items-center justify-between gap-3 px-2 pb-1">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-2 pb-1">
               <label className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-full border border-hairline px-4 text-[14px] font-medium text-zinc-600 transition hover:border-zinc-300 hover:bg-surface">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path
@@ -863,16 +1095,26 @@ export function App() {
               </button>
             </div>
           </div>
-          <label className="mt-3 flex min-h-[44px] cursor-pointer select-none items-center gap-2 px-2 text-[13px] text-zinc-600">
-            <input
-              type="checkbox"
-              checked={manualOnly}
-              onChange={onToggleManualOnly}
-              disabled={busy}
-              className="h-4 w-4 accent-ink"
-            />
-            <span>{t("input.manualOnly")}</span>
-          </label>
+          {input.length === 0 && !result && (
+            <p className="mt-2 px-2 text-xs text-zinc-400">{t("input.dropHint")}</p>
+          )}
+          {looksReturnedFromAi && (
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 px-2 text-[13px] text-zinc-500">
+              <span>{t("restore.reopenPrompt")}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  // Move the pasted text into the restore flow as-is. Do NOT re-redact: these tokens are
+                  // already placeholders to be turned back into originals. openRestore forces the text tab.
+                  setRestoreInput(input);
+                  openRestore();
+                }}
+                className="inline-flex min-h-[44px] items-center font-medium text-ink underline decoration-zinc-300 underline-offset-2 transition hover:decoration-ink"
+              >
+                {t("restore.title")}
+              </button>
+            </div>
+          )}
           <p className={`mt-1 px-2 text-xs ${fileError ? "text-amber-600" : "text-zinc-400"}`}>
             {statusLine}
           </p>
@@ -955,13 +1197,15 @@ export function App() {
         </section>
 
         {result && (
-          <section className="mt-8 animate-[fadeIn_0.25s_ease]">
+          <section className="mt-8 animate-[fadeIn_200ms_ease-out]">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-medium text-ink">
                   {result.key.length > 0
                     ? t("result.found", { count: result.key.length })
-                    : t("result.none")}
+                    : manualOnly
+                      ? t("result.manualEmpty")
+                      : t("result.none")}
                 </span>
                 {chips.map(([type, count]) => (
                   <span
@@ -986,6 +1230,10 @@ export function App() {
               </div>
               <div className="flex items-center gap-2">
                 {redacted &&
+                  // Safety (manual mode, zero redactions): the "redacted" file would be byte-identical to
+                  // the original yet named "_מושחר" — a leak-shaped footgun. Withhold the download until
+                  // the user has hidden at least one value.
+                  !(manualOnly && result.key.length === 0) &&
                   // A redacted FILE only has names removed once NER has settled. Never hand back the
                   // file before that (trust: no second chance). While loading -> a pending pill; if the
                   // model FAILED -> withhold the download entirely and offer a retry (the deterministic
@@ -994,14 +1242,14 @@ export function App() {
                   (!manualOnly &&
                   source?.kind === "file" &&
                   (ner.status === "loading" || ner.status === "idle") ? (
-                    <span className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-hairline px-4 text-[13px] font-medium text-zinc-400">
+                    <span className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-hairline px-4 text-[13px] font-medium text-zinc-400">
                       {t("result.downloadPending")}
                     </span>
                   ) : !manualOnly && source?.kind === "file" && ner.status === "error" ? (
                     <button
                       type="button"
                       onClick={onRetryNer}
-                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-red-300 bg-red-50 px-4 text-[13px] font-medium text-red-700 transition hover:bg-red-100"
+                      className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-red-300 bg-red-50 px-4 text-[13px] font-medium text-red-700 transition hover:bg-red-100"
                     >
                       {t("result.retryNames")}
                     </button>
@@ -1009,7 +1257,8 @@ export function App() {
                     <button
                       type="button"
                       onClick={onDownload}
-                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-white transition hover:opacity-90"
+                      disabled={busy}
+                      className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-white transition hover:opacity-90 disabled:opacity-40"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path
@@ -1026,11 +1275,29 @@ export function App() {
               </div>
             </div>
 
+            {nerAdded !== null && nerAdded > 0 && (
+              <p
+                className="mb-3 inline-flex animate-[fadeIn_200ms_ease-out] items-center gap-1.5 text-[13px] font-medium text-emerald-700"
+                aria-live="polite"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M12 5v14M5 12h14"
+                    stroke="currentColor"
+                    strokeWidth="1.9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                {t("result.nerAdded", { count: nerAdded })}
+              </p>
+            )}
+
             {(showManualInput || manualTerms.length > 0) && (
               <div className="mb-3 rounded-2xl border border-hairline bg-surface p-3">
                 {showManualInput && (
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <input
                         dir="rtl"
                         value={manualInput}
@@ -1042,7 +1309,7 @@ export function App() {
                           }
                         }}
                         placeholder={t("manual.placeholder")}
-                        className="min-h-[40px] flex-1 rounded-xl border border-hairline bg-white px-3 text-[14px] outline-none placeholder:text-zinc-400"
+                        className="min-h-[44px] w-full rounded-xl border border-hairline bg-white px-3 text-[16px] outline-none focus-visible:ring-2 focus-visible:ring-ink/20 placeholder:text-zinc-400 sm:w-auto sm:flex-1"
                       />
                       <input
                         dir="ltr"
@@ -1060,13 +1327,13 @@ export function App() {
                         }}
                         placeholder={t("manual.labelPlaceholder")}
                         maxLength={20}
-                        className="min-h-[40px] w-28 rounded-xl border border-hairline bg-white px-3 text-[14px] uppercase outline-none placeholder:normal-case placeholder:text-zinc-400"
+                        className="min-h-[44px] w-28 rounded-xl border border-hairline bg-white px-3 text-[16px] uppercase outline-none focus-visible:ring-2 focus-visible:ring-ink/20 placeholder:normal-case placeholder:text-zinc-400"
                       />
                       <button
                         type="button"
                         onClick={onAddManual}
                         disabled={manualInput.trim().length === 0}
-                        className="min-h-[40px] rounded-full bg-ink px-4 text-[14px] font-medium text-white transition hover:opacity-90 disabled:opacity-30"
+                        className="min-h-[44px] rounded-full bg-ink px-4 text-[14px] font-medium text-white transition hover:opacity-90 disabled:opacity-30"
                       >
                         {t("manual.submit")}
                       </button>
@@ -1086,7 +1353,7 @@ export function App() {
                           type="button"
                           onClick={() => onRemoveManual(mt.value)}
                           aria-label={t("manual.remove")}
-                          className="text-zinc-400 transition hover:text-ink"
+                          className="-me-2 inline-flex min-h-[44px] min-w-[44px] items-center justify-center text-zinc-400 transition hover:text-ink"
                         >
                           ✕
                         </button>
@@ -1097,16 +1364,41 @@ export function App() {
               </div>
             )}
 
+            {manualOnly && result.anonymizedText.trim().length > 0 && (
+              <div className="mb-2 flex items-center gap-2 rounded-xl border border-hairline bg-surface px-3 py-2 text-[13px] leading-relaxed text-zinc-600">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                  className="shrink-0 text-ink"
+                >
+                  <path
+                    d="M5 3l14 8-6 1.5L11 19 5 3z"
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span>{t("result.manualClickBanner")}</span>
+              </div>
+            )}
+
             <div className="relative">
               {result.anonymizedText.trim().length > 0 && (
-                <div className="absolute left-3 top-3 z-10 flex gap-1.5">
-                  <button
-                    type="button"
-                    onClick={onCopy}
-                    title={t("result.copy")}
-                    aria-label={t("result.copy")}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink"
-                  >
+                <div className="absolute end-3 top-3 z-10 flex gap-1.5">
+                  {/* Safety (manual mode, zero redactions): the copy would hand back untouched content, so
+                      hide it until the user has hidden at least one value. */}
+                  {!(manualOnly && result.key.length === 0) && (
+                    <button
+                      type="button"
+                      onClick={onCopy}
+                      disabled={busy}
+                      title={t("result.copy")}
+                      aria-label={copied ? t("result.copied") : t("result.copy")}
+                      className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink disabled:opacity-40"
+                    >
                     {copied ? (
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path
@@ -1128,13 +1420,14 @@ export function App() {
                         />
                       </svg>
                     )}
-                  </button>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setPreviewExpanded((v) => !v)}
                     title={t(previewExpanded ? "result.collapse" : "result.expand")}
                     aria-label={t(previewExpanded ? "result.collapse" : "result.expand")}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink"
+                    className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink"
                   >
                     {previewExpanded ? (
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1174,9 +1467,11 @@ export function App() {
                   t("result.clickRedact"),
                   t("result.clickUndo"),
                   t("result.clickReveal"),
+                  manualOnly,
                 )}
               </div>
             </div>
+            {copyError && <p className="mt-2 px-2 text-xs text-amber-600">{t("result.copyFailed")}</p>}
             <p className="mt-2 px-2 text-xs text-zinc-400">{t("result.clickHint")}</p>
             {manualOnly ? (
               <p className="mt-3 rounded-xl bg-amber-50/60 px-3 py-2 text-xs leading-relaxed text-zinc-600">
@@ -1197,11 +1492,105 @@ export function App() {
               </p>
             )}
 
+            {/* Bridge (D4): one restrained sentence that also discloses the copy prepends an AI prompt,
+                plus a link-button that opens the guided restore flow. No multi-node diagram. */}
             {result.key.length > 0 && (
-              <div className="mt-4 rounded-2xl border border-hairline bg-surface p-4">
-                <div className="text-[13px] font-medium text-ink">{t("key.title")}</div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("key.explain")}</p>
-                <label className="mt-3 flex items-center gap-2 text-[13px] text-zinc-700">
+              <div className="mt-3 rounded-xl border border-hairline bg-surface px-4 py-3">
+                <p className="text-[13px] leading-relaxed text-zinc-500">{t("result.bridge")}</p>
+                <button
+                  type="button"
+                  onClick={openRestore}
+                  className="mt-1 inline-flex min-h-[44px] items-center gap-1.5 text-[13px] font-medium text-ink underline decoration-zinc-300 underline-offset-2 transition hover:decoration-ink"
+                >
+                  {t("restore.title")}
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                    className="rtl:rotate-180"
+                  >
+                    <path
+                      d="M9 6l6 6-6 6"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            {result.key.length > 0 && (
+              <div
+                className={`mt-4 rounded-2xl border border-hairline bg-surface p-4 ${
+                  keyDownloaded ? "" : "border-s-[3px] border-s-amber-300"
+                }`}
+              >
+                {keyDownloaded ? (
+                  // State B: calm confirmation. The key is saved; no more warnings.
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path
+                          d="M5 12l4.5 4.5L19 7"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-medium text-ink">{t("key.title")}</div>
+                      <p className="mt-1 text-xs leading-relaxed text-ink">{t("key.downloaded")}</p>
+                    </div>
+                  </div>
+                ) : (
+                  // State A: guidance. One amber-weight irreversibility sentence, the rest zinc. When the
+                  // key CHANGED after a prior download (G4), show only the quiet delta, not the full wall.
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <circle cx="8" cy="8" r="4" stroke="currentColor" strokeWidth="1.7" />
+                        <path
+                          d="M11 11l8 8m-3 0 3-3"
+                          stroke="currentColor"
+                          strokeWidth="1.7"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-medium text-ink">{t("key.title")}</div>
+                      {keyEverDownloaded ? (
+                        <p className="mt-1 text-xs font-medium leading-relaxed text-amber-800">
+                          {t("key.changed")}
+                        </p>
+                      ) : (
+                        <>
+                          <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                            {t("key.meaningless")}
+                          </p>
+                          <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                            {t("key.sessionActive")}
+                          </p>
+                          <p className="mt-1 text-xs font-medium leading-relaxed text-amber-800">
+                            {t("key.warning")}
+                          </p>
+                        </>
+                      )}
+                      {ner.status === "loading" && (
+                        <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("key.notFinal")}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <label className="mt-3 flex min-h-[44px] cursor-pointer items-center gap-2 py-2 text-[13px] text-zinc-700">
                   <input
                     type="checkbox"
                     checked={encryptKey}
@@ -1211,29 +1600,96 @@ export function App() {
                   {t("key.encrypt")}
                 </label>
                 {encryptKey && (
-                  <input
-                    type="password"
-                    value={keyPassphrase}
-                    onChange={(event) => setKeyPassphrase(event.target.value)}
-                    placeholder={t("key.passphrase")}
-                    className="mt-2 w-full rounded-xl border border-hairline bg-white px-3 py-2 text-[14px] outline-none placeholder:text-zinc-400"
-                  />
+                  <div className="relative mt-2">
+                    <input
+                      ref={passphraseRef}
+                      type={showPass ? "text" : "password"}
+                      value={keyPassphrase}
+                      onChange={(event) => {
+                        setKeyPassphrase(event.target.value);
+                        setPassphraseMissing(false);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void onDownloadKey();
+                        }
+                      }}
+                      placeholder={t("key.passphrase")}
+                      className="min-h-[44px] w-full rounded-xl border border-hairline bg-white px-3 py-2 pe-12 text-[16px] outline-none focus-visible:ring-2 focus-visible:ring-ink/20 placeholder:text-zinc-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPass((v) => !v)}
+                      aria-label={t(showPass ? "key.hidePass" : "key.showPass")}
+                      className="absolute inset-y-0 end-0 inline-flex min-h-[44px] min-w-[44px] items-center justify-center text-zinc-400 transition hover:text-ink"
+                    >
+                      {showPass ? (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path
+                            d="M3 3l18 18M10.6 10.6a3 3 0 0 0 4.2 4.2M9.9 5.2A9.6 9.6 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4M6.1 6.1A17 17 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 3-.5"
+                            stroke="currentColor"
+                            strokeWidth="1.7"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      ) : (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path
+                            d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"
+                            stroke="currentColor"
+                            strokeWidth="1.7"
+                          />
+                          <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.7" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                )}
+                {passphraseMissing && (
+                  <p className="mt-1 text-xs text-amber-600">{t("key.passphraseHint")}</p>
                 )}
                 <button
                   type="button"
-                  onClick={onDownloadKey}
-                  disabled={encryptKey && keyPassphrase.length === 0}
-                  className="mt-3 min-h-[40px] rounded-full border border-hairline px-5 text-[14px] font-medium text-ink transition hover:bg-white disabled:opacity-40"
+                  onClick={() => void onDownloadKey()}
+                  className="mt-3 inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-ink px-5 text-[14px] font-medium text-white transition hover:opacity-90 active:scale-[0.98]"
                 >
-                  {t("key.download")}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M12 4v11m0 0l-4-4m4 4l4-4M5 20h14"
+                      stroke="currentColor"
+                      strokeWidth="1.9"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  {t(keyDownloaded ? "key.downloadAgain" : "key.download")}
                 </button>
+                {encryptKey && keyPassphrase.length === 0 && (
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      onClick={() => void onDownloadKey(true)}
+                      className="text-xs text-zinc-500 underline decoration-zinc-300 underline-offset-2 transition hover:text-ink"
+                    >
+                      {t("key.downloadPlain")}
+                    </button>
+                    <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
+                      {t("key.plainWarning")}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </section>
         )}
 
-        <section className="mt-8">
-          <details className="group rounded-2xl border border-hairline bg-white transition hover:border-zinc-300">
+        <section className="mt-8" ref={restoreSectionRef}>
+          <details
+            open={restoreOpen}
+            onToggle={(event) => setRestoreOpen(event.currentTarget.open)}
+            className="group rounded-2xl border border-hairline bg-white transition hover:border-zinc-300"
+          >
             <summary className="flex cursor-pointer list-none items-center justify-between p-5 text-sm font-medium text-ink">
               {t("restore.title")}
               <span className="text-zinc-300 transition group-open:rotate-180" aria-hidden="true">
@@ -1241,37 +1697,56 @@ export function App() {
               </span>
             </summary>
             <div className="px-5 pb-5">
-              <textarea
-                dir="rtl"
-                lang="he"
-                spellCheck={false}
-                value={restoreInput}
-                onChange={(event) => setRestoreInput(event.target.value)}
-                className="min-h-[120px] w-full resize-none rounded-2xl border border-hairline bg-surface p-4 text-[15px] leading-relaxed outline-none placeholder:text-zinc-400"
-                placeholder={t("restore.placeholder")}
-              />
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={onRestore}
-                  disabled={restoreInput.trim().length === 0}
-                  className="min-h-[44px] rounded-full border border-hairline px-5 text-[15px] font-medium text-ink transition hover:bg-surface disabled:opacity-30"
-                >
-                  {t("restore.submit")}
-                </button>
-                <label className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-full px-3 text-[13px] font-medium text-zinc-600 transition hover:text-ink">
-                  {uploadedKey ? t("key.loaded", { count: uploadedKey.length }) : t("key.upload")}
-                  <input
-                    type="file"
-                    accept=".json"
-                    className="hidden"
-                    onChange={(event) => {
-                      void onUploadKey(event.target.files?.[0]);
-                      event.currentTarget.value = "";
-                    }}
-                  />
-                </label>
-              </div>
+              <p className="text-xs leading-relaxed text-zinc-500">{t("restore.subtitle")}</p>
+
+              {/* Step 1 — key. A live key shows a green done line + a quiet replace link; otherwise a
+                  blocking upload step, since without a key there is nothing to restore. An encrypted key
+                  that is uploaded but not yet unlocked (pendingEnc) leaves activeKey null, so it stays in
+                  the upload state with the passphrase field below. */}
+              {activeKey && activeKey.length > 0 ? (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2">
+                  <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-emerald-800">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path
+                        d="M5 12l4.5 4.5L19 7"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    {t("restore.keyActive", { count: activeKey.length })}
+                  </span>
+                  <label className="inline-flex min-h-[44px] cursor-pointer items-center text-xs font-medium text-emerald-700 underline underline-offset-2 transition hover:text-emerald-900">
+                    {t("key.replace")}
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={(event) => {
+                        void onUploadKey(event.target.files?.[0]);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              ) : (
+                <div className="mt-3 rounded-xl border border-hairline bg-surface px-3 py-3">
+                  <p className="text-[13px] text-zinc-600">{t("restore.keyStep")}</p>
+                  <label className="mt-2 inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-full border border-hairline bg-white px-5 text-[14px] font-medium text-ink transition hover:bg-surface">
+                    {uploadedKey ? t("key.loaded", { count: uploadedKey.length }) : t("key.upload")}
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={(event) => {
+                        void onUploadKey(event.target.files?.[0]);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              )}
               {pendingEnc && (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <input
@@ -1279,12 +1754,12 @@ export function App() {
                     value={unlockPassphrase}
                     onChange={(event) => setUnlockPassphrase(event.target.value)}
                     placeholder={t("key.passphrase")}
-                    className="min-w-[200px] flex-1 rounded-xl border border-hairline bg-surface px-3 py-2 text-[14px] outline-none placeholder:text-zinc-400"
+                    className="min-w-[200px] flex-1 rounded-xl border border-hairline bg-surface px-3 py-2 text-[16px] outline-none focus-visible:ring-2 focus-visible:ring-ink/20 placeholder:text-zinc-400"
                   />
                   <button
                     type="button"
                     onClick={onUnlockKey}
-                    className="min-h-[40px] rounded-full bg-ink px-5 text-[14px] font-medium text-white transition hover:opacity-90"
+                    className="min-h-[44px] rounded-full bg-ink px-5 text-[14px] font-medium text-white transition hover:opacity-90"
                   >
                     {t("key.unlock")}
                   </button>
@@ -1296,51 +1771,157 @@ export function App() {
                 </p>
               )}
 
-              <div className="mt-4 border-t border-hairline pt-4">
-                <div className="text-[13px] font-medium text-ink">{t("restoreFile.title")}</div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("restoreFile.explain")}</p>
-                <label className="mt-3 inline-flex min-h-[40px] cursor-pointer items-center gap-2 rounded-full border border-hairline bg-white px-5 text-[14px] font-medium text-ink transition hover:bg-surface">
-                  {t("restoreFile.upload")}
-                  <input
-                    type="file"
-                    accept=".docx,.txt"
-                    className="hidden"
-                    onChange={(event) => {
-                      void onRestoreFile(event.target.files?.[0]);
-                      event.currentTarget.value = "";
-                    }}
-                  />
-                </label>
-                {restoreFileError && (
-                  <p className="mt-2 text-xs text-amber-600">
-                    {restoreFileError === "nokey"
-                      ? t("restoreFile.noKey")
-                      : restoreFileError === "unsupported"
-                        ? t("restoreFile.unsupported")
-                        : t("restoreFile.generic")}
-                  </p>
-                )}
-                {restoreUnmatched > 0 && (
-                  <p className="mt-2 text-xs text-amber-600">
-                    {t("restore.unmatched", { count: restoreUnmatched })}
-                  </p>
-                )}
+              {/* Step 2 — what to restore: one segmented control, only one path shown at a time. */}
+              <div className="mt-4 inline-flex rounded-full border border-hairline p-0.5">
+                {(["text", "file"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setRestoreMode(mode)}
+                    className={`min-h-[44px] rounded-full px-4 text-[13px] font-medium transition ${
+                      restoreMode === mode ? "bg-ink text-white" : "text-zinc-600 hover:text-ink"
+                    }`}
+                  >
+                    {t(mode === "text" ? "restore.modeText" : "restore.modeFile")}
+                  </button>
+                ))}
               </div>
 
-              {restoreResult && (
+              {restoreMode === "text" ? (
                 <>
-                  <div
+                  <textarea
+                    ref={restoreTextareaRef}
                     dir="rtl"
-                    className="mt-4 whitespace-pre-wrap break-words rounded-2xl border border-hairline bg-surface p-5 text-[17px] leading-loose"
+                    lang="he"
+                    spellCheck={false}
+                    value={restoreInput}
+                    onChange={(event) => setRestoreInput(event.target.value)}
+                    className="mt-3 min-h-[120px] w-full resize-none rounded-2xl border border-hairline bg-surface p-4 text-[16px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ink/20 placeholder:text-zinc-400"
+                    placeholder={t("restore.placeholder")}
+                  />
+                  <button
+                    type="button"
+                    onClick={onRestore}
+                    disabled={restoreInput.trim().length === 0}
+                    className="mt-3 min-h-[44px] rounded-full border border-hairline px-5 text-[15px] font-medium text-ink transition hover:bg-surface disabled:opacity-30"
                   >
-                    {highlight(restoreResult.restoredText)}
-                  </div>
-                  {restoreResult.unmatched.length > 0 && (
-                    <p className="mt-2 text-xs text-amber-600">
-                      {t("restore.unmatched", { count: restoreResult.unmatched.length })}
-                    </p>
+                    {t("restore.submit")}
+                  </button>
+
+                  {/* Step 3 — output (M2 climax). */}
+                  {restoreResult && (
+                    <div className="mt-4">
+                      {restoredCount > 0 && (
+                        <p className="mb-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-emerald-800">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path
+                              d="M5 12l4.5 4.5L19 7"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          {t("restore.restoredCount", { count: restoredCount })}
+                        </p>
+                      )}
+                      <div className="relative">
+                        {restoreResult.restoredText.trim().length > 0 && (
+                          <button
+                            type="button"
+                            onClick={onCopyRestored}
+                            title={t("restore.copyRestored")}
+                            aria-label={restoredCopied ? t("result.copied") : t("restore.copyRestored")}
+                            className="absolute end-3 top-3 z-10 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink"
+                          >
+                            {restoredCopied ? (
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path
+                                  d="M5 12l4.5 4.5L19 7"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            ) : (
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.8" />
+                                <path
+                                  d="M5 15V5a2 2 0 0 1 2-2h8"
+                                  stroke="currentColor"
+                                  strokeWidth="1.8"
+                                  strokeLinecap="round"
+                                />
+                              </svg>
+                            )}
+                          </button>
+                        )}
+                        <div
+                          dir="rtl"
+                          className="whitespace-pre-wrap break-words rounded-2xl border border-hairline bg-surface p-5 pt-12 text-[17px] leading-loose"
+                        >
+                          {highlightValues(
+                            restoreResult.restoredText,
+                            (activeKey ?? []).map((row) => row.original),
+                          )}
+                        </div>
+                      </div>
+                      {restoredCopyError && (
+                        <p className="mt-2 text-xs text-amber-600">{t("result.copyFailed")}</p>
+                      )}
+                      {restoreResult.unmatched.length > 0 && (
+                        <p className="mt-2 text-xs text-amber-600">
+                          {t("restore.unmatched", { count: restoreResult.unmatched.length })}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </>
+              ) : (
+                <div className="mt-3">
+                  <p className="text-xs leading-relaxed text-zinc-500">{t("restoreFile.explain")}</p>
+                  <label className="mt-3 inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-full border border-hairline bg-white px-5 text-[14px] font-medium text-ink transition hover:bg-surface">
+                    {t("restoreFile.upload")}
+                    <input
+                      type="file"
+                      accept=".docx,.txt"
+                      className="hidden"
+                      onChange={(event) => {
+                        void onRestoreFile(event.target.files?.[0]);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                  {restoreFileDone && (
+                    <p className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-emerald-800">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path
+                          d="M5 12l4.5 4.5L19 7"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      {t("restore.fileSuccess")}
+                    </p>
+                  )}
+                  {restoreFileError && (
+                    <p className="mt-2 text-xs text-amber-600">
+                      {restoreFileError === "nokey"
+                        ? t("restoreFile.noKey")
+                        : restoreFileError === "unsupported"
+                          ? t("restoreFile.unsupported")
+                          : t("restoreFile.generic")}
+                    </p>
+                  )}
+                  {restoreUnmatched > 0 && (
+                    <p className="mt-2 text-xs text-amber-600">
+                      {t("restore.unmatched", { count: restoreUnmatched })}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           </details>
@@ -1366,8 +1947,11 @@ export function App() {
           </ol>
         </section>
 
-        <section className="mt-16 rounded-3xl bg-surface px-6 py-10 sm:px-10">
+        <section id="privacy" className="mt-16 scroll-mt-6 rounded-3xl bg-surface px-6 py-10 sm:px-10">
           <h2 className="text-center text-lg font-semibold tracking-tight">{t("trust.heading")}</h2>
+          <p className="mx-auto mt-2 max-w-md text-center text-[13px] leading-relaxed text-zinc-500">
+            {t("trust.subheading")}
+          </p>
           <div className="mt-8 grid gap-8 sm:grid-cols-3">
             {trustItems.map((item) => (
               <div key={item.key} className="text-center sm:text-right">
@@ -1397,6 +1981,8 @@ export function App() {
       <footer className="mx-auto mt-24 max-w-2xl px-6 pb-16 text-center text-xs leading-relaxed text-zinc-400">
         <p className="text-zinc-500">{t("trust.tagline")}</p>
         <p className="mx-auto mt-3 max-w-xl">{t("legal.noCollection")}</p>
+        <p className="mx-auto mt-3 max-w-xl">{t("legal.notAdvice")}</p>
+        <p className="mx-auto mt-3 max-w-xl">{t("legal.asIs")}</p>
         <p className="mt-4">
           {t("legal.brand")}{" "}
           <a
@@ -1406,6 +1992,14 @@ export function App() {
             className="text-ink underline decoration-zinc-300 underline-offset-4 transition hover:decoration-ink"
           >
             {t("legal.sourceLink")}
+          </a>
+        </p>
+        <p className="mt-2">
+          <a
+            href="/terms.html"
+            className="text-ink underline decoration-zinc-300 underline-offset-4 transition hover:decoration-ink"
+          >
+            {t("terms.link")}
           </a>
         </p>
       </footer>

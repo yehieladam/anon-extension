@@ -20,6 +20,13 @@ const QUOTE_VARIANTS = /["'`״׳“”‟‘’]/g;
 /** A placeholder-shaped token: `[ ... _<digits> ]`, tolerating internal spaces. */
 const PLACEHOLDER_TOKEN = /\[[^[\]]*_\d+\s*\]/g;
 
+/** Count placeholder-shaped tokens in `text`, using the SAME tolerant pattern `restore` matches on, so
+ *  callers (e.g. the "restored N values" count / the returned-from-AI heuristic) never under-count
+ *  relative to what actually restores. */
+export function countPlaceholderTokens(text: string): number {
+  return text.match(PLACEHOLDER_TOKEN)?.length ?? 0;
+}
+
 /** Canonical form of a placeholder for matching: NFC, no bidi controls, no quotes, no spaces. */
 function normalizePlaceholder(token: string): string {
   return token

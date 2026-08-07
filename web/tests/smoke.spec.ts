@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 /**
  * Stage-0 smoke: the app loads under the production headers, is crossOriginIsolated (COOP/COEP work),
@@ -16,6 +16,6 @@ test("app loads, is cross-origin isolated, and the worker anonymizes", async ({ 
   // The deterministic path is instant — a phone placeholder must appear without any model load.
   await expect(page.getByRole("button", { name: "[PHONE_1]", exact: true })).toBeVisible({ timeout: 15_000 });
 
-  // Trust badge: the main network counter stays a true zero on the deterministic path.
-  await expect(page.locator("header")).toContainText("0 בקשות רשת");
+  // Trust badge: the main network counter stays a true zero on the deterministic path (0-state copy).
+  await expect(page.locator("header")).toContainText("המידע אינו נשלח לשרתים");
 });

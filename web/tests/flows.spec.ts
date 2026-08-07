@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import JSZip from "jszip";
 import * as XLSX from "xlsx";
 
@@ -53,17 +53,25 @@ async function uploadAndDownload(
 test("restore: paste → redact (in-memory key) → restore brings the originals back", async ({
   page,
 }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/");
   await page.fill("textarea", `לקוח בטלפון ${PHONE} ותעודת זהות ${ID}`);
   await page.getByRole("button", { name: "השחרת המסמך" }).click();
   await expect(page.getByRole("button", { name: "[PHONE_1]", exact: true })).toBeVisible({ timeout: 15_000 });
 
-  // Open the restore panel (its textarea is pre-filled with the anonymized text; the in-memory key from
-  // the redaction above is active) and restore. The originals appear only in the restored-text panel.
-  await page.getByText("שחזור הערכים המקוריים").click();
+  // The restore box no longer pre-fills (guided flow): copy the redacted text (this also auto-opens the
+  // restore panel), read the tokenized text back from the clipboard, paste it in and restore. The
+  // in-memory key from the redaction above is active, so the originals come back in the restored panel.
+  await page.getByRole("button", { name: /העתקה/ }).first().click();
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  const tokenized = clip.split("---")[1]?.trim() ?? clip; // the text after the AI-instruction separator
+  await page.locator("details textarea").fill(tokenized);
   await page.getByRole("button", { name: "שחזור", exact: true }).click();
-  await expect(page.getByText(PHONE, { exact: false })).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText(ID, { exact: false })).toBeVisible();
+  // Scope the assertions to the restore panel: the main input textarea still holds the raw original, and
+  // the restore box's input holds the tokens, so only the restored OUTPUT carries the raw values here.
+  const panel = page.locator("details");
+  await expect(panel.getByText(PHONE, { exact: false })).toBeVisible({ timeout: 10_000 });
+  await expect(panel.getByText(ID, { exact: false })).toBeVisible();
 });
 
 test("manual-only: redacts only the chosen term, leaves auto PII, never loads the model", async ({
@@ -77,7 +85,7 @@ test("manual-only: redacts only the chosen term, leaves auto PII, never loads th
   });
 
   await page.goto("/");
-  await page.getByRole("checkbox").first().check(); // manual-only (the only checkbox pre-result)
+  await page.getByRole("button", { name: "בחירה ידנית", exact: true }).click(); // switch to manual-only
   await page.fill("textarea", `דוד כהן ותעודת זהות ${ID}`);
   await page.getByRole("button", { name: "השחרת המסמך" }).click();
 
@@ -99,7 +107,7 @@ test("click-to-redact: click a word to redact it, click the token to undo (manua
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("checkbox").first().check(); // manual-only → model-free, everything clickable
+  await page.getByRole("button", { name: "בחירה ידנית", exact: true }).click(); // manual-only, model-free, everything clickable
   await page.fill("textarea", "דוד כהן גר בעיר");
   await page.getByRole("button", { name: "השחרת המסמך" }).click();
 
@@ -119,7 +127,7 @@ test("custom name: a named manual term emits [CLIENT_1]; the label input blocks 
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("checkbox").first().check(); // manual-only (model-free)
+  await page.getByRole("button", { name: "בחירה ידנית", exact: true }).click(); // manual-only, model-free
   await page.fill("textarea", "התובע דוד כהן");
   await page.getByRole("button", { name: "השחרת המסמך" }).click();
   await page.getByRole("button", { name: "+ הוספה ידנית" }).click();
@@ -162,7 +170,7 @@ test("word/number split: a house number is a separate clickable unit from the st
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("checkbox").first().check(); // manual-only (model-free)
+  await page.getByRole("button", { name: "בחירה ידנית", exact: true }).click(); // manual-only, model-free
   await page.fill("textarea", "רחוב הרצל47 בשנת 1947"); // glued letter+digit must split; 1947 is separate
   await page.getByRole("button", { name: "השחרת המסמך" }).click();
 

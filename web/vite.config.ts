@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from "node:url";
+import { resolve } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
@@ -89,6 +90,14 @@ export default defineConfig({
     target: "es2022",
     outDir: fileURLToPath(new URL("../dist-web", import.meta.url)),
     emptyOutDir: true,
+    rollupOptions: {
+      // Multi-page: the app (index.html) + a self-contained static terms page (terms.html served at
+      // /terms.html). No router, no runtime cost to the app — terms.html ships no JS.
+      input: {
+        main: resolve(fileURLToPath(new URL(".", import.meta.url)), "index.html"),
+        terms: resolve(fileURLToPath(new URL(".", import.meta.url)), "terms.html"),
+      },
+    },
   },
   optimizeDeps: {
     esbuildOptions: { target: "es2022" },
