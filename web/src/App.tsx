@@ -90,12 +90,23 @@ const TYPE_LABEL: Record<EntityType, string> = {
 /** Split on placeholder tokens and render each as a subtle pill so the redactions read clearly. */
 const TOKEN_SPLIT = /(\[[^[\]]*_\d+\])/g;
 const IS_TOKEN = /^\[[^[\]]*_\d+\]$/;
-function highlight(text: string): ReactNode[] {
-  return text.split(TOKEN_SPLIT).map((part, index) =>
-    IS_TOKEN.test(part) ? (
+
+/** Wrap each occurrence of an active-key ORIGINAL value in an emerald pill, so the restored text shows
+ *  at a glance which values came back (M2). Values are matched literally (longest first so a longer value
+ *  wins over a shorter substring); only values from the active key are highlighted, never arbitrary text. */
+function highlightValues(text: string, values: readonly string[]): ReactNode[] {
+  const unique = [...new Set(values)].filter((value) => value.length > 0).sort((a, b) => b.length - a.length);
+  if (unique.length === 0) {
+    return [<span key={0}>{text}</span>];
+  }
+  const escaped = unique.map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const splitter = new RegExp(`(${escaped.join("|")})`, "g");
+  const valueSet = new Set(unique);
+  return text.split(splitter).map((part, index) =>
+    valueSet.has(part) ? (
       <mark
         key={index}
-        className="mx-0.5 rounded-md bg-ink/[0.06] px-1.5 py-0.5 text-[0.92em] font-medium text-ink"
+        className="rounded-md bg-emerald-50 px-1 py-0.5 font-medium text-emerald-900"
       >
         {part}
       </mark>
@@ -226,6 +237,10 @@ export function App() {
   // Guided restore (D): the panel is controlled so copy can auto-open it; refs let G7 reveal + focus it
   // so an auto-open below the fold is not silent.
   const [restoreOpen, setRestoreOpen] = useState(false);
+  // Guided restore step 2: one segmented control picks text vs whole-file, so the two paths are never
+  // stacked. restoredCopied drives the restored-box corner copy icon (mirrors the redacted preview).
+  const [restoreMode, setRestoreMode] = useState<"text" | "file">("text");
+  const [restoredCopied, setRestoredCopied] = useState(false);
   const restoreSectionRef = useRef<HTMLElement>(null);
   const restoreTextareaRef = useRef<HTMLTextAreaElement>(null);
   // Manual redaction — user-added terms the automatic detectors missed.
@@ -272,6 +287,9 @@ export function App() {
     null,
   );
   const [restoreUnmatched, setRestoreUnmatched] = useState(0);
+  // A whole-file restore downloads a file (no on-screen restoredText), so a boolean drives its success
+  // confirmation line independently of the unmatched count (which can legitimately be 0).
+  const [restoreFileDone, setRestoreFileDone] = useState(false);
 
   const busy = status !== null;
 
@@ -742,6 +760,27 @@ export function App() {
     setRestoreResult(restored);
   }, [restoreInput, activeKey]);
 
+  // Copy the restored (real-value) text — a plain copy, no AI-prompt prefix, since this is the final
+  // output for the user. Mirrors the redacted preview's corner icon.
+  const onCopyRestored = useCallback(async () => {
+    if (!restoreResult) {
+      return;
+    }
+    await navigator.clipboard.writeText(restoreResult.restoredText);
+    setRestoredCopied(true);
+    window.setTimeout(() => setRestoredCopied(false), COPIED_RESET_MS);
+  }, [restoreResult]);
+
+  // M2 climax count: how many tokens in the pasted text were actually restored (placeholders present
+  // minus the ones with no key match). Clamped at 0.
+  const restoredCount = useMemo(() => {
+    if (!restoreResult) {
+      return 0;
+    }
+    const tokensInInput = restoreInput.match(/\[[^[\]]*_\d+\]/g)?.length ?? 0;
+    return Math.max(0, tokensInInput - restoreResult.unmatched.length);
+  }, [restoreResult, restoreInput]);
+
   const onRestoreFile = useCallback(
     async (file: File | undefined) => {
       if (!file) {
@@ -749,6 +788,7 @@ export function App() {
       }
       setRestoreFileError(null);
       setRestoreUnmatched(0);
+      setRestoreFileDone(false);
       if (!activeKey || activeKey.length === 0) {
         setRestoreFileError("nokey");
         return;
@@ -763,6 +803,7 @@ export function App() {
             : `${file.name.slice(0, dot)}_משוחזר${file.name.slice(dot)}`;
         downloadBlob(new Blob([bytes as BlobPart], { type: mimeFor(file.name) }), name);
         setRestoreUnmatched(unmatched.length);
+        setRestoreFileDone(true);
       } catch (error) {
         setRestoreFileError(
           error instanceof Error && error.message.includes("RESTORE_UNSUPPORTED")
@@ -1420,38 +1461,56 @@ export function App() {
               </span>
             </summary>
             <div className="px-5 pb-5">
-              <textarea
-                ref={restoreTextareaRef}
-                dir="rtl"
-                lang="he"
-                spellCheck={false}
-                value={restoreInput}
-                onChange={(event) => setRestoreInput(event.target.value)}
-                className="min-h-[120px] w-full resize-none rounded-2xl border border-hairline bg-surface p-4 text-[15px] leading-relaxed outline-none placeholder:text-zinc-400"
-                placeholder={t("restore.placeholder")}
-              />
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={onRestore}
-                  disabled={restoreInput.trim().length === 0}
-                  className="min-h-[44px] rounded-full border border-hairline px-5 text-[15px] font-medium text-ink transition hover:bg-surface disabled:opacity-30"
-                >
-                  {t("restore.submit")}
-                </button>
-                <label className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-full px-3 text-[13px] font-medium text-zinc-600 transition hover:text-ink">
-                  {uploadedKey ? t("key.loaded", { count: uploadedKey.length }) : t("key.upload")}
-                  <input
-                    type="file"
-                    accept=".json"
-                    className="hidden"
-                    onChange={(event) => {
-                      void onUploadKey(event.target.files?.[0]);
-                      event.currentTarget.value = "";
-                    }}
-                  />
-                </label>
-              </div>
+              <p className="text-xs leading-relaxed text-zinc-500">{t("restore.subtitle")}</p>
+
+              {/* Step 1 — key. A live key shows a green done line + a quiet replace link; otherwise a
+                  blocking upload step, since without a key there is nothing to restore. An encrypted key
+                  that is uploaded but not yet unlocked (pendingEnc) leaves activeKey null, so it stays in
+                  the upload state with the passphrase field below. */}
+              {activeKey && activeKey.length > 0 ? (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2">
+                  <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-emerald-800">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path
+                        d="M5 12l4.5 4.5L19 7"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    {t("restore.keyActive", { count: activeKey.length })}
+                  </span>
+                  <label className="inline-flex min-h-[44px] cursor-pointer items-center text-xs font-medium text-emerald-700 underline underline-offset-2 transition hover:text-emerald-900">
+                    {t("key.replace")}
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={(event) => {
+                        void onUploadKey(event.target.files?.[0]);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              ) : (
+                <div className="mt-3 rounded-xl border border-hairline bg-surface px-3 py-3">
+                  <p className="text-[13px] text-zinc-600">{t("restore.keyStep")}</p>
+                  <label className="mt-2 inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-full border border-hairline bg-white px-5 text-[14px] font-medium text-ink transition hover:bg-surface">
+                    {uploadedKey ? t("key.loaded", { count: uploadedKey.length }) : t("key.upload")}
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={(event) => {
+                        void onUploadKey(event.target.files?.[0]);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              )}
               {pendingEnc && (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <input
@@ -1459,12 +1518,12 @@ export function App() {
                     value={unlockPassphrase}
                     onChange={(event) => setUnlockPassphrase(event.target.value)}
                     placeholder={t("key.passphrase")}
-                    className="min-w-[200px] flex-1 rounded-xl border border-hairline bg-surface px-3 py-2 text-[14px] outline-none placeholder:text-zinc-400"
+                    className="min-w-[200px] flex-1 rounded-xl border border-hairline bg-surface px-3 py-2 text-[16px] outline-none focus-visible:ring-2 focus-visible:ring-ink/20 placeholder:text-zinc-400"
                   />
                   <button
                     type="button"
                     onClick={onUnlockKey}
-                    className="min-h-[40px] rounded-full bg-ink px-5 text-[14px] font-medium text-white transition hover:opacity-90"
+                    className="min-h-[44px] rounded-full bg-ink px-5 text-[14px] font-medium text-white transition hover:opacity-90"
                   >
                     {t("key.unlock")}
                   </button>
@@ -1476,51 +1535,154 @@ export function App() {
                 </p>
               )}
 
-              <div className="mt-4 border-t border-hairline pt-4">
-                <div className="text-[13px] font-medium text-ink">{t("restoreFile.title")}</div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("restoreFile.explain")}</p>
-                <label className="mt-3 inline-flex min-h-[40px] cursor-pointer items-center gap-2 rounded-full border border-hairline bg-white px-5 text-[14px] font-medium text-ink transition hover:bg-surface">
-                  {t("restoreFile.upload")}
-                  <input
-                    type="file"
-                    accept=".docx,.txt"
-                    className="hidden"
-                    onChange={(event) => {
-                      void onRestoreFile(event.target.files?.[0]);
-                      event.currentTarget.value = "";
-                    }}
-                  />
-                </label>
-                {restoreFileError && (
-                  <p className="mt-2 text-xs text-amber-600">
-                    {restoreFileError === "nokey"
-                      ? t("restoreFile.noKey")
-                      : restoreFileError === "unsupported"
-                        ? t("restoreFile.unsupported")
-                        : t("restoreFile.generic")}
-                  </p>
-                )}
-                {restoreUnmatched > 0 && (
-                  <p className="mt-2 text-xs text-amber-600">
-                    {t("restore.unmatched", { count: restoreUnmatched })}
-                  </p>
-                )}
+              {/* Step 2 — what to restore: one segmented control, only one path shown at a time. */}
+              <div className="mt-4 inline-flex rounded-full border border-hairline p-0.5">
+                {(["text", "file"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setRestoreMode(mode)}
+                    className={`min-h-[44px] rounded-full px-4 text-[13px] font-medium transition ${
+                      restoreMode === mode ? "bg-ink text-white" : "text-zinc-600 hover:text-ink"
+                    }`}
+                  >
+                    {t(mode === "text" ? "restore.modeText" : "restore.modeFile")}
+                  </button>
+                ))}
               </div>
 
-              {restoreResult && (
+              {restoreMode === "text" ? (
                 <>
-                  <div
+                  <textarea
+                    ref={restoreTextareaRef}
                     dir="rtl"
-                    className="mt-4 whitespace-pre-wrap break-words rounded-2xl border border-hairline bg-surface p-5 text-[17px] leading-loose"
+                    lang="he"
+                    spellCheck={false}
+                    value={restoreInput}
+                    onChange={(event) => setRestoreInput(event.target.value)}
+                    className="mt-3 min-h-[120px] w-full resize-none rounded-2xl border border-hairline bg-surface p-4 text-[16px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ink/20 placeholder:text-zinc-400"
+                    placeholder={t("restore.placeholder")}
+                  />
+                  <button
+                    type="button"
+                    onClick={onRestore}
+                    disabled={restoreInput.trim().length === 0}
+                    className="mt-3 min-h-[44px] rounded-full border border-hairline px-5 text-[15px] font-medium text-ink transition hover:bg-surface disabled:opacity-30"
                   >
-                    {highlight(restoreResult.restoredText)}
-                  </div>
-                  {restoreResult.unmatched.length > 0 && (
-                    <p className="mt-2 text-xs text-amber-600">
-                      {t("restore.unmatched", { count: restoreResult.unmatched.length })}
-                    </p>
+                    {t("restore.submit")}
+                  </button>
+
+                  {/* Step 3 — output (M2 climax). */}
+                  {restoreResult && (
+                    <div className="mt-4">
+                      {restoredCount > 0 && (
+                        <p className="mb-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-emerald-800">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path
+                              d="M5 12l4.5 4.5L19 7"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          {t("restore.restoredCount", { count: restoredCount })}
+                        </p>
+                      )}
+                      <div className="relative">
+                        {restoreResult.restoredText.trim().length > 0 && (
+                          <button
+                            type="button"
+                            onClick={onCopyRestored}
+                            title={t("restore.copyRestored")}
+                            aria-label={restoredCopied ? t("result.copied") : t("restore.copyRestored")}
+                            className="absolute end-3 top-3 z-10 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink"
+                          >
+                            {restoredCopied ? (
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path
+                                  d="M5 12l4.5 4.5L19 7"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            ) : (
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.8" />
+                                <path
+                                  d="M5 15V5a2 2 0 0 1 2-2h8"
+                                  stroke="currentColor"
+                                  strokeWidth="1.8"
+                                  strokeLinecap="round"
+                                />
+                              </svg>
+                            )}
+                          </button>
+                        )}
+                        <div
+                          dir="rtl"
+                          className="whitespace-pre-wrap break-words rounded-2xl border border-hairline bg-surface p-5 pt-12 text-[17px] leading-loose"
+                        >
+                          {highlightValues(
+                            restoreResult.restoredText,
+                            (activeKey ?? []).map((row) => row.original),
+                          )}
+                        </div>
+                      </div>
+                      {restoreResult.unmatched.length > 0 && (
+                        <p className="mt-2 text-xs text-amber-600">
+                          {t("restore.unmatched", { count: restoreResult.unmatched.length })}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </>
+              ) : (
+                <div className="mt-3">
+                  <p className="text-xs leading-relaxed text-zinc-500">{t("restoreFile.explain")}</p>
+                  <label className="mt-3 inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-full border border-hairline bg-white px-5 text-[14px] font-medium text-ink transition hover:bg-surface">
+                    {t("restoreFile.upload")}
+                    <input
+                      type="file"
+                      accept=".docx,.txt"
+                      className="hidden"
+                      onChange={(event) => {
+                        void onRestoreFile(event.target.files?.[0]);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                  {restoreFileDone && (
+                    <p className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-emerald-800">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path
+                          d="M5 12l4.5 4.5L19 7"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      {t("restore.fileSuccess")}
+                    </p>
+                  )}
+                  {restoreFileError && (
+                    <p className="mt-2 text-xs text-amber-600">
+                      {restoreFileError === "nokey"
+                        ? t("restoreFile.noKey")
+                        : restoreFileError === "unsupported"
+                          ? t("restoreFile.unsupported")
+                          : t("restoreFile.generic")}
+                    </p>
+                  )}
+                  {restoreUnmatched > 0 && (
+                    <p className="mt-2 text-xs text-amber-600">
+                      {t("restore.unmatched", { count: restoreUnmatched })}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           </details>

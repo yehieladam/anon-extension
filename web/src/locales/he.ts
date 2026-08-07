@@ -154,6 +154,7 @@ export const he = {
     placeholder: "הדביקו כאן את התשובה שקיבלתם מה-AI, עם הסימונים כמו [ת״ז_1], לשחזור הערכים.",
     submit: "שחזור",
     restoredLabel: "הטקסט המשוחזר",
+    copyRestored: "העתקת הטקסט המשוחזר",
     restoredCount: "הוחזרו {{count}} ערכים.",
     fileSuccess: "הקובץ שוחזר וירד אליכם.",
     reopenPrompt: "נראה שזה חזר מ-AI, לשחזר?",
