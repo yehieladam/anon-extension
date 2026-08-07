@@ -7,6 +7,7 @@ import type { AnonymizeResult, Recognizer, Span } from "./types";
 import { resolveOverlaps } from "./resolve";
 import { completeOccurrences } from "./occurrences";
 import { anonymize } from "./anonymize";
+import { normalizeForDetection, mapShadowSpan } from "./normalize";
 import { manualSpans, type ManualInput } from "./manual";
 import { israeliIdRecognizer } from "./recognizers/israeliId";
 import { israeliPhoneRecognizer } from "./recognizers/israeliPhone";
@@ -31,9 +32,24 @@ export const DETERMINISTIC_RECOGNIZERS: readonly Recognizer[] = [
   emailRecognizer,
 ];
 
-/** Run every deterministic recognizer and return the raw (possibly overlapping) spans. */
+/**
+ * Run every deterministic recognizer and return the raw (possibly overlapping) spans.
+ *
+ * Recognizers run on a NORMALIZED shadow (invisible bidi/format marks stripped, digit variants folded)
+ * so a value split by an embedded RLM / written in fullwidth digits is still found (B1 + L2); spans map
+ * back to EXACT original offsets, so the original text (and its tokenized positions) is never mutated.
+ * When nothing normalizes (the common case), the shadow equals the text and we skip the mapping.
+ */
 export function detectDeterministic(text: string): Span[] {
-  return DETERMINISTIC_RECOGNIZERS.flatMap((recognizer) => recognizer.recognize(text));
+  const { shadow, map } = normalizeForDetection(text);
+  const rawSpans = DETERMINISTIC_RECOGNIZERS.flatMap((recognizer) => recognizer.recognize(shadow));
+  if (shadow === text) {
+    return rawSpans;
+  }
+  return rawSpans.map((span) => {
+    const { start, end } = mapShadowSpan(map, span.start, span.end, text.length);
+    return { ...span, start, end };
+  });
 }
 
 /** Deterministic-only anonymize: detect → resolve overlaps → anonymize. Instant (no model). */
