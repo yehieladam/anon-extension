@@ -41,44 +41,93 @@ export function mapNerTag(raw: string): NerEntityType | null {
 
 /** Hebrew letters incl. finals (U+05D0–U+05EA) — used to extend across `##`-truncated names. */
 const HEBREW_LETTER = /[א-ת]/;
+/** Hebrew points/cantillation (niqqud) — stripped before matching so a niqqud-bearing name in the PDF
+ *  text still matches a model seed that dropped the points (H-nerspan). */
+const NIQQUD = /[֑-ׇ]/;
 
 /** Strip `##` wordpiece markers (optionally with a leading space) to get a searchable seed. */
 function cleanSurface(surface: string): string {
   return surface.replace(/ ?##/g, "").trim();
 }
 
+/** A seed as it must look for matching: `##` removed, niqqud stripped, whitespace runs collapsed to a
+ *  single space, trimmed. The shadow of the text is normalized the same way, so a name split by a line
+ *  break / double space / niqqud still matches — without ever matching a DIFFERENT string. */
+function normalizeSeed(surface: string): string {
+  return cleanSurface(surface).replace(NIQQUD, "").replace(/\s+/g, " ").trim();
+}
+
+/** Build a normalized shadow of `text` (niqqud stripped, whitespace runs collapsed to a single space)
+ *  with an offset map: map[k] = original index of shadow char k. A collapsed whitespace run maps to the
+ *  run's first original index. Lets us find a whitespace/niqqud-variant occurrence and map it back to
+ *  the exact original span. */
+function seedSearchShadow(text: string): { shadow: string; map: number[] } {
+  let shadow = "";
+  const map: number[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (NIQQUD.test(ch)) {
+      i += 1; // strip niqqud
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      const runStart = i;
+      while (i < text.length && /\s/.test(text[i])) {
+        i += 1;
+      }
+      shadow += " ";
+      map.push(runStart);
+      continue;
+    }
+    shadow += ch;
+    map.push(i);
+    i += 1;
+  }
+  return { shadow, map };
+}
+
 /**
  * Rebuild real char-offset spans from raw pipeline output aligned to `text`. Pure; processes spans
- * in order with a running cursor so repeated surfaces map to successive positions. A span whose
- * seed can't be located is skipped defensively (never guesses an offset).
+ * in order with a running cursor so repeated surfaces map to successive positions. Matching is
+ * whitespace-flexible and niqqud-insensitive (via a normalized shadow + offset map), so names split by
+ * a line break / double space / niqqud are still found — but only a REAL occurrence ever matches; a
+ * seed that isn't present is skipped defensively (never guesses an offset).
  */
 export function reconstructNerSpans(text: string, rawSpans: readonly RawNerSpan[]): Span[] {
+  const { shadow, map } = seedSearchShadow(text);
   const spans: Span[] = [];
-  let cursor = 0;
+  let shadowCursor = 0;
 
   for (const rawSpan of rawSpans) {
     const type = mapNerTag(rawSpan.raw);
     if (type === null) {
       continue;
     }
-    const seed = cleanSurface(rawSpan.surface);
+    const seed = normalizeSeed(rawSpan.surface);
     if (seed.length === 0) {
       continue;
     }
-    let start = text.indexOf(seed, cursor);
-    if (start === -1) {
-      start = text.indexOf(seed);
+    let shadowStart = shadow.indexOf(seed, shadowCursor);
+    if (shadowStart === -1) {
+      shadowStart = shadow.indexOf(seed);
     }
-    if (start === -1) {
+    if (shadowStart === -1) {
       continue;
     }
-    let end = start + seed.length;
-    // Extend across a `##`-truncated wordpiece continuation (hyphenated names).
+    const shadowEnd = shadowStart + seed.length;
+    const start = map[shadowStart];
+    let end = map[shadowEnd - 1] + 1;
+    // Extend across a `##`-truncated wordpiece continuation (hyphenated names), in ORIGINAL text.
     while (end < text.length && HEBREW_LETTER.test(text[end])) {
       end += 1;
     }
     spans.push({ start, end, type, score: rawSpan.score });
-    cursor = end;
+    // Advance the shadow cursor past this match (and past any original-text extension).
+    shadowCursor = shadowEnd;
+    while (shadowCursor < shadow.length && map[shadowCursor] < end) {
+      shadowCursor += 1;
+    }
   }
 
   return spans;
