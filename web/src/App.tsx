@@ -192,9 +192,13 @@ function renderInteractive(
         nodes.push(<span key={key++}>{part.slice(last, start)}</span>);
       }
       nodes.push(
+        // tabIndex={-1} (G6): there can be hundreds of these per-word buttons; keeping them out of the
+        // tab order stops a keyboard user from being trapped tabbing through every word. The manual-add
+        // input is the keyboard path for redacting a missed term.
         <button
           key={key++}
           type="button"
+          tabIndex={-1}
           title={pickTitle}
           onClick={() => onPick(word)}
           className="rounded transition hover:bg-ink/[0.08] hover:ring-1 hover:ring-ink/20"
@@ -868,7 +872,7 @@ export function App() {
   ] as const;
 
   return (
-    <div dir="rtl" className="min-h-screen bg-white text-ink">
+    <div dir="rtl" className="min-h-screen overflow-x-hidden bg-white text-ink">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
         <span className="text-[19px] font-semibold tracking-tight" dir="ltr">
           Mechikon
@@ -948,7 +952,7 @@ export function App() {
               className="min-h-[168px] w-full resize-none rounded-2xl bg-transparent p-4 text-[17px] leading-relaxed outline-none placeholder:text-zinc-400"
               placeholder={t("input.paste.placeholder")}
             />
-            <div className="flex items-center justify-between gap-3 px-2 pb-1">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-2 pb-1">
               <label className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-full border border-hairline px-4 text-[14px] font-medium text-zinc-600 transition hover:border-zinc-300 hover:bg-surface">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path
@@ -1112,14 +1116,14 @@ export function App() {
                   (!manualOnly &&
                   source?.kind === "file" &&
                   (ner.status === "loading" || ner.status === "idle") ? (
-                    <span className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-hairline px-4 text-[13px] font-medium text-zinc-400">
+                    <span className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-hairline px-4 text-[13px] font-medium text-zinc-400">
                       {t("result.downloadPending")}
                     </span>
                   ) : !manualOnly && source?.kind === "file" && ner.status === "error" ? (
                     <button
                       type="button"
                       onClick={onRetryNer}
-                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-red-300 bg-red-50 px-4 text-[13px] font-medium text-red-700 transition hover:bg-red-100"
+                      className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-red-300 bg-red-50 px-4 text-[13px] font-medium text-red-700 transition hover:bg-red-100"
                     >
                       {t("result.retryNames")}
                     </button>
@@ -1127,7 +1131,7 @@ export function App() {
                     <button
                       type="button"
                       onClick={onDownload}
-                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-white transition hover:opacity-90"
+                      className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-white transition hover:opacity-90"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path
@@ -1178,7 +1182,7 @@ export function App() {
                           }
                         }}
                         placeholder={t("manual.placeholder")}
-                        className="min-h-[40px] flex-1 rounded-xl border border-hairline bg-white px-3 text-[14px] outline-none placeholder:text-zinc-400"
+                        className="min-h-[44px] flex-1 rounded-xl border border-hairline bg-white px-3 text-[16px] outline-none focus-visible:ring-2 focus-visible:ring-ink/20 placeholder:text-zinc-400"
                       />
                       <input
                         dir="ltr"
@@ -1196,13 +1200,13 @@ export function App() {
                         }}
                         placeholder={t("manual.labelPlaceholder")}
                         maxLength={20}
-                        className="min-h-[40px] w-28 rounded-xl border border-hairline bg-white px-3 text-[14px] uppercase outline-none placeholder:normal-case placeholder:text-zinc-400"
+                        className="min-h-[44px] w-28 rounded-xl border border-hairline bg-white px-3 text-[16px] uppercase outline-none focus-visible:ring-2 focus-visible:ring-ink/20 placeholder:normal-case placeholder:text-zinc-400"
                       />
                       <button
                         type="button"
                         onClick={onAddManual}
                         disabled={manualInput.trim().length === 0}
-                        className="min-h-[40px] rounded-full bg-ink px-4 text-[14px] font-medium text-white transition hover:opacity-90 disabled:opacity-30"
+                        className="min-h-[44px] rounded-full bg-ink px-4 text-[14px] font-medium text-white transition hover:opacity-90 disabled:opacity-30"
                       >
                         {t("manual.submit")}
                       </button>
@@ -1222,7 +1226,7 @@ export function App() {
                           type="button"
                           onClick={() => onRemoveManual(mt.value)}
                           aria-label={t("manual.remove")}
-                          className="text-zinc-400 transition hover:text-ink"
+                          className="-me-2 inline-flex min-h-[44px] min-w-[44px] items-center justify-center text-zinc-400 transition hover:text-ink"
                         >
                           ✕
                         </button>
@@ -1235,13 +1239,13 @@ export function App() {
 
             <div className="relative">
               {result.anonymizedText.trim().length > 0 && (
-                <div className="absolute left-3 top-3 z-10 flex gap-1.5">
+                <div className="absolute end-3 top-3 z-10 flex gap-1.5">
                   <button
                     type="button"
                     onClick={onCopy}
                     title={t("result.copy")}
-                    aria-label={t("result.copy")}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink"
+                    aria-label={copied ? t("result.copied") : t("result.copy")}
+                    className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink"
                   >
                     {copied ? (
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1270,7 +1274,7 @@ export function App() {
                     onClick={() => setPreviewExpanded((v) => !v)}
                     title={t(previewExpanded ? "result.collapse" : "result.expand")}
                     aria-label={t(previewExpanded ? "result.collapse" : "result.expand")}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink"
+                    className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink"
                   >
                     {previewExpanded ? (
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
