@@ -223,6 +223,11 @@ export function App() {
   );
   const [restoreInput, setRestoreInput] = useState("");
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
+  // Guided restore (D): the panel is controlled so copy can auto-open it; refs let G7 reveal + focus it
+  // so an auto-open below the fold is not silent.
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const restoreSectionRef = useRef<HTMLElement>(null);
+  const restoreTextareaRef = useRef<HTMLTextAreaElement>(null);
   // Manual redaction — user-added terms the automatic detectors missed.
   const [manualTerms, setManualTerms] = useState<ManualTerm[]>([]);
   const [manualInput, setManualInput] = useState("");
@@ -705,6 +710,18 @@ export function App() {
     }
   }, [pendingEnc, unlockPassphrase]);
 
+  // Open the restore panel and reveal it (G7): after the controlled <details> paints, scroll the section
+  // into view and focus the restore textarea so an auto-open (or the bridge link) is never a silent
+  // below-the-fold change. Honor prefers-reduced-motion for the scroll.
+  const openRestore = useCallback(() => {
+    setRestoreOpen(true);
+    requestAnimationFrame(() => {
+      const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+      restoreSectionRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+      restoreTextareaRef.current?.focus({ preventScroll: true });
+    });
+  }, []);
+
   const onCopy = useCallback(async () => {
     if (!result) {
       return;
@@ -712,7 +729,9 @@ export function App() {
     await navigator.clipboard.writeText(t("result.promptPrefix") + result.anonymizedText);
     setCopied(true);
     window.setTimeout(() => setCopied(false), COPIED_RESET_MS);
-  }, [result, t]);
+    // The user copied, so they are mid-round-trip: open the restore flow and wait for their AI answer.
+    openRestore();
+  }, [result, t, openRestore]);
 
   // Prefer an uploaded key (restore in a later/fresh session) over the in-memory session key.
   const activeKey = uploadedKey ?? result?.key ?? null;
@@ -1387,8 +1406,12 @@ export function App() {
           </section>
         )}
 
-        <section className="mt-8">
-          <details className="group rounded-2xl border border-hairline bg-white transition hover:border-zinc-300">
+        <section className="mt-8" ref={restoreSectionRef}>
+          <details
+            open={restoreOpen}
+            onToggle={(event) => setRestoreOpen(event.currentTarget.open)}
+            className="group rounded-2xl border border-hairline bg-white transition hover:border-zinc-300"
+          >
             <summary className="flex cursor-pointer list-none items-center justify-between p-5 text-sm font-medium text-ink">
               {t("restore.title")}
               <span className="text-zinc-300 transition group-open:rotate-180" aria-hidden="true">
@@ -1397,6 +1420,7 @@ export function App() {
             </summary>
             <div className="px-5 pb-5">
               <textarea
+                ref={restoreTextareaRef}
                 dir="rtl"
                 lang="he"
                 spellCheck={false}
