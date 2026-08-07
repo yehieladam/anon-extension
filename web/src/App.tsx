@@ -1410,6 +1410,14 @@ export function App() {
             {t("legal.sourceLink")}
           </a>
         </p>
+        <p className="mt-2">
+          <a
+            href="/terms.html"
+            className="text-ink underline decoration-zinc-300 underline-offset-4 transition hover:decoration-ink"
+          >
+            {t("terms.link")}
+          </a>
+        </p>
       </footer>
     </div>
   );

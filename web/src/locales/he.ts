@@ -182,6 +182,9 @@ export const he = {
     brand: "מחיקון, כלי חינמי מבית BAI Solutions.",
     sourceLink: "קוד המקור (רישיון AGPL)",
   },
+  terms: {
+    link: "תנאי שימוש",
+  },
 } as const;
 
 export type Translation = typeof he;
