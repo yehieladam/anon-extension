@@ -68,3 +68,35 @@ describe("israeliIdRecognizer", () => {
     expect(values).toEqual(["123456709", "876543208"]);
   });
 });
+
+describe("israeliIdRecognizer — H-id8 (8-digit + separator forms, gated to ID context)", () => {
+  it("detects an 8-digit ID (dropped leading zero) next to a ת\"ז label", () => {
+    const text = 'ת"ז 61234506'; // -> 061234506, checksum-valid
+    const spans = israeliIdRecognizer.recognize(text);
+    expect(spans).toHaveLength(1);
+    expect(text.slice(spans[0].start, spans[0].end)).toBe("61234506");
+    expect(spans[0].type).toBe("ISRAELI_ID");
+  });
+
+  it("detects a separator-formatted 9-digit ID next to a ת\"ז label", () => {
+    const text = 'ת"ז 061-234-506';
+    const spans = israeliIdRecognizer.recognize(text);
+    expect(spans).toHaveLength(1);
+    expect(text.slice(spans[0].start, spans[0].end)).toBe("061-234-506");
+  });
+
+  it("detects an 8-digit ID after a מספר זהות label", () => {
+    const spans = israeliIdRecognizer.recognize("מספר זהות: 61234506");
+    expect(spans.map((s) => s.type)).toContain("ISRAELI_ID");
+  });
+
+  it("does NOT flag a bare 8-digit number with no ID context (over-refusal guard)", () => {
+    // Same digits, no ת"ז/זהות nearby — must stay untouched so ordinary 8-digit numbers are not eaten.
+    expect(israeliIdRecognizer.recognize("יתרה 61234506 שקלים")).toHaveLength(0);
+  });
+
+  it("does not double-count a 9-digit ID that already matched the standalone run", () => {
+    const text = 'ת"ז של הלקוח היא 123456709 בבקשה';
+    expect(israeliIdRecognizer.recognize(text)).toHaveLength(1);
+  });
+});
