@@ -72,7 +72,13 @@ export function anonymize(text: string, spans: readonly Span[]): AnonymizeResult
     const dedupeKey = `${label} ${value}`;
     let placeholder = placeholderByKey.get(dedupeKey);
     if (placeholder === undefined) {
-      const next = (counters.get(label) ?? 0) + 1;
+      // Skip any counter whose token already occurs LITERALLY in the source (M1): minting a placeholder
+      // that collides with a `[LABEL_n]`-shaped string already in the prose would make restore inject the
+      // value into text that never held it.
+      let next = (counters.get(label) ?? 0) + 1;
+      while (text.includes(`[${label}_${next}]`)) {
+        next += 1;
+      }
       counters.set(label, next);
       placeholder = `[${label}_${next}]`;
       placeholderByKey.set(dedupeKey, placeholder);

@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import type { EntityType, Span } from "./types";
 import { anonymize, placeholderFor } from "./anonymize";
+import { restore } from "./restore";
 
 /** Build a span for the first occurrence of `value` in `text`. */
 function spanOf(text: string, value: string, type: EntityType, score = 1): Span {
@@ -60,6 +61,19 @@ describe("anonymize", () => {
   it("returns the text unchanged with an empty key when there are no spans", () => {
     const text = "אין כאן שום דבר מזהה";
     expect(anonymize(text, [])).toEqual({ anonymizedText: text, spans: [], key: [] });
+  });
+
+  it("skips a minted placeholder that already occurs literally in the source (M1)", () => {
+    // The source already contains a literal "[ID_1]". Minting [ID_1] for the real ID would make restore
+    // inject the ID into that pre-existing prose token. The mint must skip to [ID_2].
+    const text = 'הטופס מכיל את הסימון [ID_1] וגם ת"ז 123456709';
+    const idSpan = spanOf(text, "123456709", "ISRAELI_ID");
+    const result = anonymize(text, [idSpan]);
+    expect(result.key[0].placeholder).toBe("[ID_2]");
+    expect(result.anonymizedText).toContain("[ID_1]"); // the literal source token is left untouched
+    expect(result.anonymizedText).toContain("[ID_2]"); // the real ID became [ID_2]
+    // No PII injection: restore leaves the literal [ID_1] as-is and only maps [ID_2] back.
+    expect(restore(result.anonymizedText, result.key).restoredText).toBe(text);
   });
 
   it("numbers per type independently", () => {
