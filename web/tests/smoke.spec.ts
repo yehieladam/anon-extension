@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 /**
  * Stage-0 smoke: the app loads under the production headers, is crossOriginIsolated (COOP/COEP work),

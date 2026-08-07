@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 /**
  * PDF offline gate (CI, model-free) — the two properties only a REAL browser proves. The redaction

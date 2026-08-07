@@ -35,12 +35,14 @@ const COPIED_RESET_MS = 1500;
 const NER_ADDED_NOTICE_MS = 4000;
 const MANUAL_ONLY_KEY = "mechikon.manualOnly";
 
-/** Read the persisted manual-only preference (default off = automatic detection). */
+/** Read the persisted manual-only preference. Manual-only is the DEFAULT: the 185MB automatic-detection
+ * model is an explicit opt-in, never a forced first-load download. Only an explicit stored "0" (the user
+ * chose automatic) turns it off; an unset or any other value means manual. */
 function readManualOnly(): boolean {
   try {
-    return localStorage.getItem(MANUAL_ONLY_KEY) === "1";
+    return localStorage.getItem(MANUAL_ONLY_KEY) !== "0";
   } catch {
-    return false;
+    return true;
   }
 }
 

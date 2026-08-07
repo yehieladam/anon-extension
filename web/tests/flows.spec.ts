@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import JSZip from "jszip";
 import * as XLSX from "xlsx";
 
@@ -85,7 +85,7 @@ test("manual-only: redacts only the chosen term, leaves auto PII, never loads th
   });
 
   await page.goto("/");
-  await page.getByRole("checkbox").first().check(); // manual-only (the only checkbox pre-result)
+  await page.getByRole("button", { name: "בחירה ידנית", exact: true }).click(); // switch to manual-only
   await page.fill("textarea", `דוד כהן ותעודת זהות ${ID}`);
   await page.getByRole("button", { name: "השחרת המסמך" }).click();
 
@@ -107,7 +107,7 @@ test("click-to-redact: click a word to redact it, click the token to undo (manua
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("checkbox").first().check(); // manual-only → model-free, everything clickable
+  await page.getByRole("button", { name: "בחירה ידנית", exact: true }).click(); // manual-only, model-free, everything clickable
   await page.fill("textarea", "דוד כהן גר בעיר");
   await page.getByRole("button", { name: "השחרת המסמך" }).click();
 
@@ -127,7 +127,7 @@ test("custom name: a named manual term emits [CLIENT_1]; the label input blocks 
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("checkbox").first().check(); // manual-only (model-free)
+  await page.getByRole("button", { name: "בחירה ידנית", exact: true }).click(); // manual-only, model-free
   await page.fill("textarea", "התובע דוד כהן");
   await page.getByRole("button", { name: "השחרת המסמך" }).click();
   await page.getByRole("button", { name: "+ הוספה ידנית" }).click();
@@ -170,7 +170,7 @@ test("word/number split: a house number is a separate clickable unit from the st
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("checkbox").first().check(); // manual-only (model-free)
+  await page.getByRole("button", { name: "בחירה ידנית", exact: true }).click(); // manual-only, model-free
   await page.fill("textarea", "רחוב הרצל47 בשנת 1947"); // glued letter+digit must split; 1947 is separate
   await page.getByRole("button", { name: "השחרת המסמך" }).click();
 

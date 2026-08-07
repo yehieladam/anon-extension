@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import fs from "node:fs";
 import * as mupdf from "mupdf";
 import { normalizeForLeak } from "../../engine/src/pdfVerify";
