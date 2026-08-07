@@ -40,7 +40,24 @@ export function isValidIsraeliId(raw: string): boolean {
  */
 const NINE_DIGIT_RUN = /(?<!\d)\d{9}(?!\d)/g;
 
-/** Flags 9-digit numbers that pass the Israeli ID checksum. */
+/**
+ * An ID label near the number, so the two forms below only fire on numbers a human marked as an ID
+ * (H-id8). A separator between ת and ז is REQUIRED (so ordinary words like "תזמורת" never count as
+ * context). Covers ת"ז / ת.ז, תעודת זהות, מספר זהות, ז.ת.
+ */
+const ID_CONTEXT = /(?:ת["'׳״.]ז|תעודת\s+זהות|מספר\s+זהות|ז\s*\.\s*ת)/g;
+/** 7..9 digits with optional single -, ., space separators (a dropped-zero 8-digit or a grouped ID). */
+const CONTEXT_CANDIDATE = /\d(?:[-.\s]?\d){6,8}/;
+/** How far after the label to look for the value (a few words of Hebrew + punctuation). */
+const CONTEXT_WINDOW = 25;
+
+/**
+ * Flags Israeli IDs. Two channels:
+ *  - Ungated: standalone 9-digit runs that pass the checksum (unchanged, no context needed).
+ *  - Context-gated (H-id8): near an ID label, an 8-digit run (dropped leading zero) or a
+ *    separator-formatted 7-9 digit group; separators are stripped and the value is checksum-validated
+ *    (isValidIsraeliId left-pads to 9). Gating to a label avoids eating ordinary 8-digit numbers.
+ */
 export const israeliIdRecognizer: Recognizer = {
   name: "IsraeliIdRecognizer",
   entity: "ISRAELI_ID",
@@ -55,6 +72,24 @@ export const israeliIdRecognizer: Recognizer = {
           // Checksum-validated — the server boosts validated pattern hits to max score.
           score: 1,
         });
+      }
+    }
+    for (const context of text.matchAll(ID_CONTEXT)) {
+      const from = context.index + context[0].length;
+      const candidate = CONTEXT_CANDIDATE.exec(text.slice(from, from + CONTEXT_WINDOW));
+      if (candidate === null) {
+        continue;
+      }
+      const digitCount = candidate[0].replace(/\D/g, "").length;
+      // Only the dropped-zero (8) or separator-formatted (9) forms; a plain 9-run is already covered.
+      if (digitCount < 8 || digitCount > 9 || !isValidIsraeliId(candidate[0])) {
+        continue;
+      }
+      const start = from + candidate.index;
+      const end = start + candidate[0].length;
+      // Skip if it overlaps a span the standalone-run pass already found (e.g. a labeled 9-digit ID).
+      if (!spans.some((span) => span.start < end && start < span.end)) {
+        spans.push({ start, end, type: "ISRAELI_ID", score: 1 });
       }
     }
     return spans;

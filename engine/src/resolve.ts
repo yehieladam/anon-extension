@@ -55,3 +55,59 @@ export function resolveOverlaps(spans: readonly Span[]): readonly Span[] {
   }
   return kept.sort((a, b) => a.start - b.start || a.end - b.end);
 }
+
+const WHITESPACE = /\s/;
+/** Trim leading/trailing whitespace off an interval so a preserved remainder starts/ends on real text. */
+function trimWhitespace(text: string, start: number, end: number): [number, number] {
+  while (start < end && WHITESPACE.test(text[start])) start += 1;
+  while (end > start && WHITESPACE.test(text[end - 1])) end -= 1;
+  return [start, end];
+}
+
+/**
+ * Like resolveOverlaps (keep the strongest span, drop overlaps), but a DROPPED span's non-overlapping
+ * remainder is preserved as a span of its own type — so a shorter higher-priority span (e.g. a manual
+ * term "יוסי") that overlaps a longer NER name ("יוסי כהן") no longer erases the name's other words
+ * ("כהן" would otherwise leak). H-manual. Remainders are trimmed of surrounding whitespace and empties
+ * dropped; the winners are exactly resolveOverlaps' winners, so this only ADDS coverage, never removes it.
+ */
+export function resolveOverlapsPreservingRemainders(
+  text: string,
+  spans: readonly Span[],
+): readonly Span[] {
+  const kept = resolveOverlaps(spans);
+  const keptSet = new Set(kept);
+  const remainders: Span[] = [];
+  for (const span of spans) {
+    if (keptSet.has(span)) {
+      continue; // a winner, not dropped
+    }
+    // Subtract every kept interval from [span.start, span.end); what's left is the non-overlapping part.
+    let segments: Array<[number, number]> = [[span.start, span.end]];
+    for (const keeper of kept) {
+      const next: Array<[number, number]> = [];
+      for (const [a, b] of segments) {
+        if (keeper.end <= a || keeper.start >= b) {
+          next.push([a, b]); // no overlap with this keeper
+          continue;
+        }
+        if (a < keeper.start) next.push([a, keeper.start]);
+        if (b > keeper.end) next.push([keeper.end, b]);
+      }
+      segments = next;
+    }
+    for (const [a, b] of segments) {
+      const [ts, te] = trimWhitespace(text, a, b);
+      if (te > ts) {
+        remainders.push({
+          start: ts,
+          end: te,
+          type: span.type,
+          score: span.score,
+          ...(span.label ? { label: span.label } : {}),
+        });
+      }
+    }
+  }
+  return remainders.length === 0 ? kept : resolveOverlaps([...kept, ...remainders]);
+}

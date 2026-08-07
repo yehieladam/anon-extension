@@ -7,6 +7,7 @@ import {
   anonymizeDeterministic,
   anonymizeFull,
   anonymizeManualOnly,
+  anonymizeWith,
   detectDeterministic,
 } from "./pipeline";
 import { restore } from "./restore";
@@ -45,6 +46,33 @@ describe("anonymizeFull", () => {
     expect(result.anonymizedText).toContain("[NAME_1]");
     expect(result.anonymizedText).toContain("[ID_1]");
     expect(restore(result.anonymizedText, result.key).restoredText).toBe(text);
+  });
+});
+
+describe("anonymizeWith — H-manual (a shorter high-priority span must not erase a longer NER name)", () => {
+  it("keeps the non-overlapping remainder of a name a manual term overlaps", () => {
+    const text = "יוסי כהן"; // NER tags the whole name; the user manually redacts only "יוסי"
+    const person: Span = { start: 0, end: text.length, type: "PERSON", score: 0.99 };
+    const manual: Span = { start: 0, end: 4, type: "MANUAL", score: 1 };
+    const result = anonymizeWith(text, [person, manual]);
+    // BOTH words must end up redacted — the surname must not leak because the manual term overlapped.
+    expect(result.anonymizedText).not.toContain("יוסי");
+    expect(result.anonymizedText).not.toContain("כהן");
+    expect(restore(result.anonymizedText, result.key).restoredText).toBe(text);
+  });
+});
+
+describe("anonymizeWith — M-3 (a synthesized remainder must respect the user's reveal)", () => {
+  it("keeps a revealed value in cleartext even when it is the remainder of an overlapped name", () => {
+    // The user revealed "כהן". A manual "משה" overlaps the PERSON name "משה כהן", so the name's
+    // remainder ("כהן") gets synthesized as its own span — which must ALSO honor the reveal.
+    const text = "משה כהן דיווח. כהן חתם.";
+    const manual: Span = { start: 0, end: 3, type: "MANUAL", score: 1 }; // "משה"
+    const person: Span = { start: 0, end: 7, type: "PERSON", score: 0.99 }; // "משה כהן"
+    const result = anonymizeWith(text, [person, manual], ["כהן"]);
+    // Both occurrences of the revealed surname must stay in cleartext (zero redactions of כהן).
+    const cleartextOccurrences = result.anonymizedText.split("כהן").length - 1;
+    expect(cleartextOccurrences).toBe(2);
   });
 });
 

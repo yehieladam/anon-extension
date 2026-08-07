@@ -78,4 +78,19 @@ describe("israeliPhoneRecognizer", () => {
       .map((span) => text.slice(span.start, span.end));
     expect(values).toEqual(["03-1234567", "052-7654321"]);
   });
+
+  describe("M-format (parenthesized area code + multiple separators)", () => {
+    it("accepts a parenthesized landline with a space and hyphen", () => {
+      expect(isValidIsraeliPhone("(02) 624-1234")).toBe(true);
+      const spans = israeliPhoneRecognizer.recognize("להתקשר (02) 624-1234 בבוקר");
+      expect(spans).toHaveLength(1);
+      expect(spans[0].type).toBe("IL_PHONE");
+    });
+
+    it("accepts a mobile written with a double space", () => {
+      const spans = israeliPhoneRecognizer.recognize("נייד 052  1234567");
+      expect(spans).toHaveLength(1);
+      expect(spans[0].type).toBe("IL_PHONE");
+    });
+  });
 });

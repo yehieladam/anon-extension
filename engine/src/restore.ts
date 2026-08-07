@@ -28,12 +28,23 @@ export function countPlaceholderTokens(text: string): number {
 }
 
 /** Canonical form of a placeholder for matching: NFC, no bidi controls, no quotes, no spaces. */
-function normalizePlaceholder(token: string): string {
+export function normalizePlaceholder(token: string): string {
   return token
     .normalize("NFC")
     .replace(BIDI_CONTROLS, "")
     .replace(QUOTE_VARIANTS, "")
     .replace(/\s+/g, "");
+}
+
+/** The set of normalized placeholder tokens already present in `text`, using the SAME tolerant pattern
+ *  restore matches on. anonymize uses this so a minted `[LABEL_n]` never collides (even tolerantly) with a
+ *  pre-existing token — otherwise restore would inject a value into prose that never held it (M-4). */
+export function normalizedPlaceholdersIn(text: string): ReadonlySet<string> {
+  const set = new Set<string>();
+  for (const token of text.match(PLACEHOLDER_TOKEN) ?? []) {
+    set.add(normalizePlaceholder(token));
+  }
+  return set;
 }
 
 /** Result of a restore: the rebuilt text and any placeholder tokens we could not map. */

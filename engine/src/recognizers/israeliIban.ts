@@ -32,8 +32,8 @@ export function isValidIsraeliIban(raw: string): boolean {
   return mod97(numeric) === 1;
 }
 
-/** "IL" + 2 check + 19 digits, tolerating single spaces between digit groups. */
-const IBAN_CANDIDATE = /\bIL\d{2}(?: ?\d){19}\b/gi;
+/** "IL" + 2 check + 19 digits, tolerating single spaces OR hyphens between digit groups (M-format). */
+const IBAN_CANDIDATE = /\bIL\d{2}(?:[-\s]?\d){19}\b/gi;
 
 /** Flags mod-97-valid Israeli IBANs. */
 export const israeliIbanRecognizer: Recognizer = {

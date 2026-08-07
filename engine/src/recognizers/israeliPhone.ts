@@ -31,11 +31,13 @@ export function isValidIsraeliPhone(raw: string): boolean {
 }
 
 /**
- * Phone-like token: an optional +972/972 or 0 trunk, then 8–10 digits with optional single
- * separators, on a clean word boundary. `(?<![\w+])` / `(?![\w])` stop it from biting into a
- * longer digit run (e.g. an account number or a 9-digit ID that does not start 0/972).
+ * Phone-like token: an optional leading "(" and +972/972 or 0 trunk, then 8–10 digits with up to two
+ * separators between digits (space, hyphen, dot, parentheses) — so parenthesized area codes
+ * "(02) 624-1234" and double spaces are tolerated (M-format). `(?<![\w+])` / `(?![\w])` still stop it
+ * from biting into a longer digit run (an account number or a 9-digit ID that does not start 0/972);
+ * normalize() strips every non-digit before the numbering-plan check.
  */
-const PHONE_CANDIDATE = /(?<![\w+])(?:\+?972[-.\s]?|0)(?:\d[-.\s]?){7,9}\d(?![\w])/g;
+const PHONE_CANDIDATE = /(?<![\w+])\(?(?:\+?972[-.\s()]{0,2}|0)(?:\d[-.\s()]{0,2}){7,9}\d(?![\w])/g;
 
 /** Flags Israeli phone numbers (mobile + landline, national and +972 forms). */
 export const israeliPhoneRecognizer: Recognizer = {

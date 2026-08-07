@@ -81,3 +81,32 @@ describe("reconstructNerSpans — alignment behaviour", () => {
     expect(text.slice(spans[1].start, spans[1].end)).toBe("דוד כהן");
   });
 });
+
+describe("reconstructNerSpans — H-nerspan (whitespace-flexible + niqqud-stripped matching)", () => {
+  it("matches a name split across a line break", () => {
+    const text = "רחל\nלוי הגישה";
+    const spans = reconstructNerSpans(text, [{ raw: "PER", surface: "רחל לוי", score: 1 }]);
+    expect(spans).toHaveLength(1);
+    expect(text.slice(spans[0].start, spans[0].end)).toBe("רחל\nלוי");
+  });
+
+  it("matches a name split by a double space", () => {
+    const text = "רחל  לוי הגישה";
+    const spans = reconstructNerSpans(text, [{ raw: "PER", surface: "רחל לוי", score: 1 }]);
+    expect(spans).toHaveLength(1);
+    expect(text.slice(spans[0].start, spans[0].end)).toBe("רחל  לוי");
+  });
+
+  it("matches a niqqud-bearing name when the model seed has no niqqud", () => {
+    const text = "החתן יוֹסֵף עלה"; // text carries niqqud; model surface does not
+    const spans = reconstructNerSpans(text, [{ raw: "PER", surface: "יוסף", score: 1 }]);
+    expect(spans).toHaveLength(1);
+    expect(text.slice(spans[0].start, spans[0].end)).toBe("יוֹסֵף");
+  });
+
+  it("still refuses to guess when there is no real occurrence", () => {
+    expect(reconstructNerSpans("טקסט אחר לגמרי", [{ raw: "PER", surface: "רחל לוי", score: 1 }])).toEqual(
+      [],
+    );
+  });
+});

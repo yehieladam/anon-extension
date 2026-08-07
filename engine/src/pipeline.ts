@@ -4,9 +4,10 @@
  * separately (it is async + needs the model): `anonymizeFull` merges NER spans when available.
  */
 import type { AnonymizeResult, Recognizer, Span } from "./types";
-import { resolveOverlaps } from "./resolve";
+import { resolveOverlaps, resolveOverlapsPreservingRemainders } from "./resolve";
 import { completeOccurrences } from "./occurrences";
 import { anonymize } from "./anonymize";
+import { normalizeForDetection, mapShadowSpan } from "./normalize";
 import { manualSpans, type ManualInput } from "./manual";
 import { israeliIdRecognizer } from "./recognizers/israeliId";
 import { israeliPhoneRecognizer } from "./recognizers/israeliPhone";
@@ -31,9 +32,24 @@ export const DETERMINISTIC_RECOGNIZERS: readonly Recognizer[] = [
   emailRecognizer,
 ];
 
-/** Run every deterministic recognizer and return the raw (possibly overlapping) spans. */
+/**
+ * Run every deterministic recognizer and return the raw (possibly overlapping) spans.
+ *
+ * Recognizers run on a NORMALIZED shadow (invisible bidi/format marks stripped, digit variants folded)
+ * so a value split by an embedded RLM / written in fullwidth digits is still found (B1 + L2); spans map
+ * back to EXACT original offsets, so the original text (and its tokenized positions) is never mutated.
+ * When nothing normalizes (the common case), the shadow equals the text and we skip the mapping.
+ */
 export function detectDeterministic(text: string): Span[] {
-  return DETERMINISTIC_RECOGNIZERS.flatMap((recognizer) => recognizer.recognize(text));
+  const { shadow, map } = normalizeForDetection(text);
+  const rawSpans = DETERMINISTIC_RECOGNIZERS.flatMap((recognizer) => recognizer.recognize(shadow));
+  if (shadow === text) {
+    return rawSpans;
+  }
+  return rawSpans.map((span) => {
+    const { start, end } = mapShadowSpan(map, span.start, span.end, text.length);
+    return { ...span, start, end };
+  });
 }
 
 /** Deterministic-only anonymize: detect → resolve overlaps → anonymize. Instant (no model). */
@@ -67,9 +83,16 @@ export function anonymizeWith(
   const excludedSet = new Set(excluded);
   const isExcluded = (span: Span): boolean =>
     span.type !== "MANUAL" && excludedSet.has(text.slice(span.start, span.end));
-  const base = resolveOverlaps(
+  // Preserve remainders (H-manual): a shorter high-priority span (a manual term) overlapping a longer NER
+  // name must not erase the name's other words. Winners are identical to resolveOverlaps; only the
+  // non-overlapping remainder of a dropped span is added back.
+  // Re-filter the resolved set through isExcluded: resolveOverlapsPreservingRemainders can synthesize a
+  // remainder from a non-excluded parent whose surface value IS excluded (a revealed word that is the tail
+  // of an overlapped name), and that remainder would otherwise be re-redacted despite the user's reveal.
+  const base = resolveOverlapsPreservingRemainders(
+    text,
     [...detectDeterministic(text), ...extraSpans].filter((span) => !isExcluded(span)),
-  );
+  ).filter((span) => !isExcluded(span));
   // Redact every whole-word occurrence of each confirmed value, not only the tagged ones — otherwise a
   // name NER caught in one place but missed in another (or tagged only half of) leaks the rest.
   const completed = completeOccurrences(text, base).filter((span) => !isExcluded(span));

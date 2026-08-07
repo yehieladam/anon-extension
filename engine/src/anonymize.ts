@@ -15,6 +15,7 @@
  * collapse two different surface values into one placeholder, which would make restore lossy.)
  */
 import type { AnonymizeResult, EntityType, KeyRow, Span } from "./types";
+import { normalizePlaceholder, normalizedPlaceholdersIn } from "./restore";
 
 /** Short Latin labels used inside `[LABEL_n]`. No spaces/underscores/slashes in a label; ASCII only
  *  so the token renders in the stamped PDF font and survives ChatGPT/RTL round-trips unmangled. */
@@ -59,6 +60,9 @@ export function anonymize(text: string, spans: readonly Span[]): AnonymizeResult
   const placeholderByKey = new Map<string, string>();
   const rows: KeyRow[] = [];
   const usedSpans: Span[] = [];
+  // Placeholder tokens already in the source, in the SAME tolerant/normalized form restore matches on —
+  // so a minted token never collides even with a spaced/mangled pre-existing token (M-4).
+  const sourcePlaceholders = normalizedPlaceholdersIn(text);
 
   let out = "";
   let cursor = 0;
@@ -72,7 +76,14 @@ export function anonymize(text: string, spans: readonly Span[]): AnonymizeResult
     const dedupeKey = `${label} ${value}`;
     let placeholder = placeholderByKey.get(dedupeKey);
     if (placeholder === undefined) {
-      const next = (counters.get(label) ?? 0) + 1;
+      // Skip any counter whose token already occurs in the source (M1 + M-4): minting a placeholder that
+      // collides with a `[LABEL_n]`-shaped string already in the prose would make restore inject the value
+      // into text that never held it. Match TOLERANTLY (normalized), the same way restore does, so a spaced
+      // or mangled pre-existing token (e.g. `[ID_1 ]`) is caught too.
+      let next = (counters.get(label) ?? 0) + 1;
+      while (sourcePlaceholders.has(normalizePlaceholder(`[${label}_${next}]`))) {
+        next += 1;
+      }
       counters.set(label, next);
       placeholder = `[${label}_${next}]`;
       placeholderByKey.set(dedupeKey, placeholder);
