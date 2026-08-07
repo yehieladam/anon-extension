@@ -1287,6 +1287,37 @@ export function App() {
               </p>
             )}
 
+            {/* Bridge (D4): one restrained sentence that also discloses the copy prepends an AI prompt,
+                plus a link-button that opens the guided restore flow. No multi-node diagram. */}
+            {result.key.length > 0 && (
+              <div className="mt-3 rounded-xl border border-hairline bg-surface px-4 py-3">
+                <p className="text-[13px] leading-relaxed text-zinc-500">{t("result.bridge")}</p>
+                <button
+                  type="button"
+                  onClick={openRestore}
+                  className="mt-1 inline-flex min-h-[44px] items-center gap-1.5 text-[13px] font-medium text-ink underline decoration-zinc-300 underline-offset-2 transition hover:decoration-ink"
+                >
+                  {t("restore.title")}
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                    className="rtl:rotate-180"
+                  >
+                    <path
+                      d="M9 6l6 6-6 6"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+            )}
+
             {result.key.length > 0 && (
               <div
                 className={`mt-4 rounded-2xl border border-hairline bg-surface p-4 ${
