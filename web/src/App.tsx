@@ -994,6 +994,9 @@ export function App() {
           <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-zinc-500">
             {t("hero.subtitle")}
           </p>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-zinc-400">
+            {t("hero.subtitleSmall")}
+          </p>
           <p className="mt-3 text-[15px] font-medium text-ink">{t("hero.taglineStrong")}</p>
         </section>
 
