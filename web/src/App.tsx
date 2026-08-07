@@ -4,6 +4,7 @@ import * as Comlink from "comlink";
 import type { AnonymizeResult, EntityType, KeyRow } from "@engine/types";
 import type { ManualTerm } from "@engine/manual";
 import type { RestoreResult } from "@engine/restore";
+import { countPlaceholderTokens } from "@engine/restore";
 import { toKeyFile, fromKeyFile } from "@engine/key";
 import {
   encryptKeyRows,
@@ -242,6 +243,11 @@ export function App() {
   const resultRef = useRef(result);
   resultRef.current = result;
   const [copied, setCopied] = useState(false);
+  // Clipboard writes can reject (permissions / no focus); surface a copy-failed hint so the user is not
+  // left thinking it worked. Separate flags for the two copy affordances so a message never shows in the
+  // wrong place.
+  const [copyError, setCopyError] = useState(false);
+  const [restoredCopyError, setRestoredCopyError] = useState(false);
   const [fileError, setFileError] = useState(false);
   const [scannedNotice, setScannedNotice] = useState(false);
   const [formulaNotice, setFormulaNotice] = useState(false);
@@ -318,7 +324,7 @@ export function App() {
 
   const busy = status !== null;
 
-  const showResult = useCallback((anonymized: AnonymizeResult) => {
+  const showResult = useCallback((anonymized: AnonymizeResult, isNewDocument = false) => {
     setResult(anonymized);
     // The restore box starts EMPTY (guided flow): the user pastes the AI's answer, not the just-redacted
     // text. The reworded restore.placeholder explains this.
@@ -326,10 +332,15 @@ export function App() {
     setRedacted(null);
     setScannedNotice(false);
     setScanNotice(null); // a fresh result clears any leftover scan refusal from a prior file
-    // A new result mints a NEW key, so any earlier download no longer covers it. keyEverDownloaded is
-    // intentionally NOT reset — it drives the quiet "key changed" delta (G4).
+    // Any result mints a NEW key, so an earlier download no longer covers it.
     setKeyDownloaded(false);
     setPassphraseMissing(false);
+    // Only a brand-new document (fresh anonymize/upload) forgets that a PRIOR document's key was
+    // downloaded, so the first-time key-loss warning shows again. A reprocess / NER-upgrade of the SAME
+    // document keeps keyEverDownloaded, so it shows the quiet "key changed" delta (G4).
+    if (isNewDocument) {
+      setKeyEverDownloaded(false);
+    }
   }, []);
 
   const onAnonymize = useCallback(async () => {
@@ -346,7 +357,10 @@ export function App() {
     try {
       // Manual-only: redact just the chosen terms, no model. Otherwise instant deterministic now, then
       // load NER for names (it upgrades the result when ready).
-      showResult(await getEngine().anonymizeSmart(text, [], manualOnlyRef.current, excludedRef.current));
+      showResult(
+        await getEngine().anonymizeSmart(text, [], manualOnlyRef.current, excludedRef.current),
+        true,
+      );
       if (!manualOnlyRef.current) {
         void loadNer();
       }
@@ -360,7 +374,13 @@ export function App() {
   // worker; the three refusal codes map to the two-tier notice; any failure pulls the download (never
   // hand back a scan we could not fully redact + verify).
   const runScanRedaction = useCallback(
-    async (name: string, buffer: ArrayBuffer, terms: readonly ManualTerm[], isCancelled?: () => boolean) => {
+    async (
+      name: string,
+      buffer: ArrayBuffer,
+      terms: readonly ManualTerm[],
+      isNewDocument = false,
+      isCancelled?: () => boolean,
+    ) => {
       setStatus("reading");
       setScanNotice(null);
       setFileError(false);
@@ -378,7 +398,7 @@ export function App() {
           excludedRef.current,
         );
         if (isCancelled?.()) return; // source changed / unmounted during the multi-second OCR
-        showResult(result);
+        showResult(result, isNewDocument);
         if (bytes) {
           setRedacted({ bytes, name: redactedName(name), mime: mimeFor(name) });
         }
@@ -428,7 +448,7 @@ export function App() {
           if (kind === "scan") {
             setSource({ kind: "file", name: file.name, buffer, scan: true });
             if (ner.status === "ready") {
-              await runScanRedaction(file.name, buffer, []);
+              await runScanRedaction(file.name, buffer, [], true);
             } else {
               void loadNer();
               setStatus(null);
@@ -446,7 +466,7 @@ export function App() {
           manualOnlyRef.current,
           excludedRef.current,
         );
-        showResult(anonymized);
+        showResult(anonymized, true);
         if (bytes) {
           setRedacted({ bytes, name: redactedName(file.name), mime: mimeFor(file.name) });
         }
@@ -506,7 +526,7 @@ export function App() {
         // A scan deferred until the model was ready: run its single OCR pass now (not the text/office
         // upgrade), sharing this effect's cancellation so a stale pass can't commit after source changes.
         if (source.kind === "file" && source.scan) {
-          await runScanRedaction(source.name, source.buffer, manualTerms, () => cancelled);
+          await runScanRedaction(source.name, source.buffer, manualTerms, false, () => cancelled);
           return;
         }
         if (source.kind === "text") {
@@ -563,7 +583,7 @@ export function App() {
       // A scan must re-run through the OCR pass (with scanOcr), never the text path — otherwise the
       // re-run hits NO_TEXT_LAYER and destroys the already-good redacted download.
       if (source.kind === "file" && source.scan) {
-        await runScanRedaction(source.name, source.buffer, terms);
+        await runScanRedaction(source.name, source.buffer, terms, false);
         return;
       }
       setStatus(source.kind === "file" ? "reading" : "working");
@@ -696,14 +716,17 @@ export function App() {
   }, []);
 
   const onDownload = useCallback(() => {
-    if (!redacted) {
+    // Defense-in-depth: never hand back a file while busy, and never in manual mode with zero redactions
+    // (the "redacted" file would be byte-identical to the original yet named "_מושחר"). The JSX also
+    // hides this button in that state and disables it while busy.
+    if (!redacted || busy || (manualOnlyRef.current && (resultRef.current?.key.length ?? 0) === 0)) {
       return;
     }
     // reason: Comlink returns a Uint8Array<ArrayBufferLike>, which TS 5.7 will not narrow to the
     // ArrayBuffer-backed view BlobPart wants; the bytes are a plain copy, so the cast is safe.
     const blob = new Blob([redacted.bytes as BlobPart], { type: redacted.mime });
     downloadBlob(blob, redacted.name);
-  }, [redacted]);
+  }, [redacted, busy]);
 
   const onDownloadKey = useCallback(
     async (plain = false) => {
@@ -769,6 +792,9 @@ export function App() {
   // into view and focus the restore textarea so an auto-open (or the bridge link) is never a silent
   // below-the-fold change. Honor prefers-reduced-motion for the scroll.
   const openRestore = useCallback(() => {
+    // Always land on the text tab: every caller (copy, bridge, the returned-from-AI offer) brings text
+    // to restore, and the G7 focus below targets the text textarea.
+    setRestoreMode("text");
     setRestoreOpen(true);
     requestAnimationFrame(() => {
       const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
@@ -778,15 +804,23 @@ export function App() {
   }, []);
 
   const onCopy = useCallback(async () => {
-    if (!result) {
+    // Defense-in-depth: never copy while busy, and never in manual mode with zero redactions (the text
+    // would be the untouched original). The JSX also hides the button + disables it while busy.
+    if (!result || busy || (manualOnlyRef.current && result.key.length === 0)) {
       return;
     }
-    await navigator.clipboard.writeText(t("result.promptPrefix") + result.anonymizedText);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), COPIED_RESET_MS);
-    // The user copied, so they are mid-round-trip: open the restore flow and wait for their AI answer.
+    setCopyError(false);
+    // The user is mid-round-trip: open the restore flow regardless of whether the clipboard write below
+    // succeeds, so a clipboard rejection does not also swallow the navigation.
     openRestore();
-  }, [result, t, openRestore]);
+    try {
+      await navigator.clipboard.writeText(t("result.promptPrefix") + result.anonymizedText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), COPIED_RESET_MS);
+    } catch {
+      setCopyError(true);
+    }
+  }, [result, busy, t, openRestore]);
 
   // Prefer an uploaded key (restore in a later/fresh session) over the in-memory session key.
   const activeKey = uploadedKey ?? result?.key ?? null;
@@ -794,10 +828,7 @@ export function App() {
   // M1: text pasted into the MAIN input that carries 2+ placeholder tokens is almost certainly an AI
   // answer coming back, not a document to redact. Offer to route it into the restore flow instead of
   // silently re-redacting the tokens.
-  const looksReturnedFromAi = useMemo(
-    () => (input.match(/\[[^[\]]*_\d+\]/g)?.length ?? 0) >= 2,
-    [input],
-  );
+  const looksReturnedFromAi = useMemo(() => countPlaceholderTokens(input) >= 2, [input]);
 
   const onRestore = useCallback(async () => {
     const restored = await getEngine().restore(restoreInput, activeKey ?? []);
@@ -810,9 +841,14 @@ export function App() {
     if (!restoreResult) {
       return;
     }
-    await navigator.clipboard.writeText(restoreResult.restoredText);
-    setRestoredCopied(true);
-    window.setTimeout(() => setRestoredCopied(false), COPIED_RESET_MS);
+    setRestoredCopyError(false);
+    try {
+      await navigator.clipboard.writeText(restoreResult.restoredText);
+      setRestoredCopied(true);
+      window.setTimeout(() => setRestoredCopied(false), COPIED_RESET_MS);
+    } catch {
+      setRestoredCopyError(true);
+    }
   }, [restoreResult]);
 
   // M2 climax count: how many tokens in the pasted text were actually restored (placeholders present
@@ -821,8 +857,7 @@ export function App() {
     if (!restoreResult) {
       return 0;
     }
-    const tokensInInput = restoreInput.match(/\[[^[\]]*_\d+\]/g)?.length ?? 0;
-    return Math.max(0, tokensInInput - restoreResult.unmatched.length);
+    return Math.max(0, countPlaceholderTokens(restoreInput) - restoreResult.unmatched.length);
   }, [restoreResult, restoreInput]);
 
   const onRestoreFile = useCallback(
@@ -1067,9 +1102,8 @@ export function App() {
                 type="button"
                 onClick={() => {
                   // Move the pasted text into the restore flow as-is. Do NOT re-redact: these tokens are
-                  // already placeholders to be turned back into originals.
+                  // already placeholders to be turned back into originals. openRestore forces the text tab.
                   setRestoreInput(input);
-                  setRestoreMode("text");
                   openRestore();
                 }}
                 className="inline-flex min-h-[44px] items-center font-medium text-ink underline decoration-zinc-300 underline-offset-2 transition hover:decoration-ink"
@@ -1220,7 +1254,8 @@ export function App() {
                     <button
                       type="button"
                       onClick={onDownload}
-                      className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-white transition hover:opacity-90"
+                      disabled={busy}
+                      className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-white transition hover:opacity-90 disabled:opacity-40"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path
@@ -1356,9 +1391,10 @@ export function App() {
                     <button
                       type="button"
                       onClick={onCopy}
+                      disabled={busy}
                       title={t("result.copy")}
                       aria-label={copied ? t("result.copied") : t("result.copy")}
-                      className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink"
+                      className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink disabled:opacity-40"
                     >
                     {copied ? (
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1432,6 +1468,7 @@ export function App() {
                 )}
               </div>
             </div>
+            {copyError && <p className="mt-2 px-2 text-xs text-amber-600">{t("result.copyFailed")}</p>}
             <p className="mt-2 px-2 text-xs text-zinc-400">{t("result.clickHint")}</p>
             {manualOnly ? (
               <p className="mt-3 rounded-xl bg-amber-50/60 px-3 py-2 text-xs leading-relaxed text-zinc-600">
@@ -1827,6 +1864,9 @@ export function App() {
                           )}
                         </div>
                       </div>
+                      {restoredCopyError && (
+                        <p className="mt-2 text-xs text-amber-600">{t("result.copyFailed")}</p>
+                      )}
                       {restoreResult.unmatched.length > 0 && (
                         <p className="mt-2 text-xs text-amber-600">
                           {t("restore.unmatched", { count: restoreResult.unmatched.length })}
