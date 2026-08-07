@@ -76,6 +76,18 @@ describe("anonymize", () => {
     expect(restore(result.anonymizedText, result.key).restoredText).toBe(text);
   });
 
+  it("skips a minted placeholder that collides with a TOLERANT source token (M-4)", () => {
+    // The source has "[ID_1 ]" (a space before ]). restore matches tolerantly, so minting a literal
+    // "[ID_1]" for the real ID would make restore inject the ID into the pre-existing token. The mint
+    // must skip past the tolerant collision, and the round-trip must not inject PII.
+    const text = "הסימון [ID_1 ] מופיע וגם 123456709";
+    const idSpan = spanOf(text, "123456709", "ISRAELI_ID");
+    const result = anonymize(text, [idSpan]);
+    expect(result.key[0].placeholder).not.toBe("[ID_1]"); // must not collide with [ID_1 ]
+    // No PII injection: the pre-existing "[ID_1 ]" must survive the round-trip unchanged.
+    expect(restore(result.anonymizedText, result.key).restoredText).toBe(text);
+  });
+
   it("numbers per type independently", () => {
     const text = "123456709 test@x.co.il 876543208";
     const spans = [
