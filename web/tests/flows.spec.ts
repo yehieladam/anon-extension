@@ -196,6 +196,24 @@ test("reveal: click an auto-detected token to un-redact a false positive", async
   await expect(page.getByRole("button", { name: "[ID_1]", exact: true })).toHaveCount(0);
 });
 
+test("copy prepends an AI instruction so the tokens survive the round-trip", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await page.fill("textarea", `לקוח בטלפון ${PHONE}`);
+  await page.getByRole("button", { name: "השחרת המסמך" }).click();
+  await expect(page.getByRole("button", { name: "[PHONE_1]", exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
+
+  await page.getByRole("button", { name: /העתקה/ }).click();
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  // The copied payload leads with the keep-the-tokens instruction and still carries the redacted text.
+  expect(clip).toContain("[NAME_1]"); // the instruction shows the token format
+  expect(clip).toContain("[PHONE_1]"); // and the actual redacted text follows
+  expect(clip).not.toContain(PHONE); // never the raw value
+  expect(clip.indexOf("---")).toBeLessThan(clip.indexOf("[PHONE_1]")); // instruction precedes the text
+});
+
 test("@model docx + xlsx: redact in place and download a file without the originals", async ({
   page,
 }) => {
