@@ -252,6 +252,16 @@ export function App() {
   const [pendingEnc, setPendingEnc] = useState<EncryptedKeyFile | null>(null);
   const [unlockPassphrase, setUnlockPassphrase] = useState("");
   const [keyError, setKeyError] = useState<"wrong" | "invalid" | null>(null);
+  // Restore-key download UX (C1): keyDownloaded flips the card to a calm confirmed state (B); it resets
+  // on every showResult because a new result mints a new key. keyEverDownloaded persists across that reset
+  // so a post-download key change shows a QUIET "key changed" delta (G4) instead of the full guidance
+  // again. showPass toggles the passphrase eye; passphraseMissing drives the inline hint when the user
+  // clicks download with encryption on and no passphrase (the button is never disabled).
+  const [keyDownloaded, setKeyDownloaded] = useState(false);
+  const [keyEverDownloaded, setKeyEverDownloaded] = useState(false);
+  const [showPass, setShowPass] = useState(false);
+  const [passphraseMissing, setPassphraseMissing] = useState(false);
+  const passphraseRef = useRef<HTMLInputElement>(null);
   // Restore a FILE (docx/txt with placeholders) back to its original values.
   const [restoreFileError, setRestoreFileError] = useState<"unsupported" | "nokey" | "generic" | null>(
     null,
@@ -267,6 +277,10 @@ export function App() {
     setRedacted(null);
     setScannedNotice(false);
     setScanNotice(null); // a fresh result clears any leftover scan refusal from a prior file
+    // A new result mints a NEW key, so any earlier download no longer covers it. keyEverDownloaded is
+    // intentionally NOT reset — it drives the quiet "key changed" delta (G4).
+    setKeyDownloaded(false);
+    setPassphraseMissing(false);
   }, []);
 
   const onAnonymize = useCallback(async () => {
@@ -631,16 +645,31 @@ export function App() {
     downloadBlob(blob, redacted.name);
   }, [redacted]);
 
-  const onDownloadKey = useCallback(async () => {
-    if (!result || result.key.length === 0) {
-      return;
-    }
-    const content =
-      encryptKey && keyPassphrase.length > 0
+  const onDownloadKey = useCallback(
+    async (plain = false) => {
+      if (!result || result.key.length === 0) {
+        return;
+      }
+      // Encryption is the safe default. If it is on with no passphrase, do NOT silently block (the old
+      // disabled button was a data-loss trap): focus the field and show an inline hint. The "download
+      // without encryption" link passes plain=true to take the unencrypted path deliberately.
+      if (!plain && encryptKey && keyPassphrase.length === 0) {
+        setPassphraseMissing(true);
+        passphraseRef.current?.focus();
+        return;
+      }
+      const encrypt = encryptKey && !plain && keyPassphrase.length > 0;
+      const content = encrypt
         ? JSON.stringify(await encryptKeyRows(result.key, keyPassphrase), null, 2)
         : toKeyFile(result.key);
-    downloadBlob(new Blob([content], { type: "application/json" }), "מפתח-שחזור.json");
-  }, [result, encryptKey, keyPassphrase]);
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadBlob(new Blob([content], { type: "application/json" }), `מפתח-שחזור-${stamp}.json`);
+      setPassphraseMissing(false);
+      setKeyDownloaded(true);
+      setKeyEverDownloaded(true);
+    },
+    [result, encryptKey, keyPassphrase],
+  );
 
   const onUploadKey = useCallback(async (file: File | undefined) => {
     if (!file) {
@@ -1198,9 +1227,72 @@ export function App() {
             )}
 
             {result.key.length > 0 && (
-              <div className="mt-4 rounded-2xl border border-hairline bg-surface p-4">
-                <div className="text-[13px] font-medium text-ink">{t("key.title")}</div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("key.explain")}</p>
+              <div
+                className={`mt-4 rounded-2xl border border-hairline bg-surface p-4 ${
+                  keyDownloaded ? "" : "border-s-[3px] border-s-amber-300"
+                }`}
+              >
+                {keyDownloaded ? (
+                  // State B: calm confirmation. The key is saved; no more warnings.
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path
+                          d="M5 12l4.5 4.5L19 7"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-medium text-ink">{t("key.title")}</div>
+                      <p className="mt-1 text-xs leading-relaxed text-ink">{t("key.downloaded")}</p>
+                    </div>
+                  </div>
+                ) : (
+                  // State A: guidance. One amber-weight irreversibility sentence, the rest zinc. When the
+                  // key CHANGED after a prior download (G4), show only the quiet delta, not the full wall.
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <circle cx="8" cy="8" r="4" stroke="currentColor" strokeWidth="1.7" />
+                        <path
+                          d="M11 11l8 8m-3 0 3-3"
+                          stroke="currentColor"
+                          strokeWidth="1.7"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-medium text-ink">{t("key.title")}</div>
+                      {keyEverDownloaded ? (
+                        <p className="mt-1 text-xs font-medium leading-relaxed text-amber-800">
+                          {t("key.changed")}
+                        </p>
+                      ) : (
+                        <>
+                          <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                            {t("key.meaningless")}
+                          </p>
+                          <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                            {t("key.sessionActive")}
+                          </p>
+                          <p className="mt-1 text-xs font-medium leading-relaxed text-amber-800">
+                            {t("key.warning")}
+                          </p>
+                        </>
+                      )}
+                      {ner.status === "loading" && (
+                        <p className="mt-1 text-xs leading-relaxed text-zinc-500">{t("key.notFinal")}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <label className="mt-3 flex items-center gap-2 text-[13px] text-zinc-700">
                   <input
                     type="checkbox"
@@ -1211,22 +1303,85 @@ export function App() {
                   {t("key.encrypt")}
                 </label>
                 {encryptKey && (
-                  <input
-                    type="password"
-                    value={keyPassphrase}
-                    onChange={(event) => setKeyPassphrase(event.target.value)}
-                    placeholder={t("key.passphrase")}
-                    className="mt-2 w-full rounded-xl border border-hairline bg-white px-3 py-2 text-[14px] outline-none placeholder:text-zinc-400"
-                  />
+                  <div className="relative mt-2">
+                    <input
+                      ref={passphraseRef}
+                      type={showPass ? "text" : "password"}
+                      value={keyPassphrase}
+                      onChange={(event) => {
+                        setKeyPassphrase(event.target.value);
+                        setPassphraseMissing(false);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void onDownloadKey();
+                        }
+                      }}
+                      placeholder={t("key.passphrase")}
+                      className="w-full rounded-xl border border-hairline bg-white px-3 py-2 pe-12 text-[16px] outline-none focus-visible:ring-2 focus-visible:ring-ink/20 placeholder:text-zinc-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPass((v) => !v)}
+                      aria-label={t(showPass ? "key.hidePass" : "key.showPass")}
+                      className="absolute inset-y-0 end-0 inline-flex min-h-[44px] min-w-[44px] items-center justify-center text-zinc-400 transition hover:text-ink"
+                    >
+                      {showPass ? (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path
+                            d="M3 3l18 18M10.6 10.6a3 3 0 0 0 4.2 4.2M9.9 5.2A9.6 9.6 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4M6.1 6.1A17 17 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 3-.5"
+                            stroke="currentColor"
+                            strokeWidth="1.7"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      ) : (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path
+                            d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"
+                            stroke="currentColor"
+                            strokeWidth="1.7"
+                          />
+                          <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.7" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                )}
+                {passphraseMissing && (
+                  <p className="mt-1 text-xs text-amber-600">{t("key.passphraseHint")}</p>
                 )}
                 <button
                   type="button"
-                  onClick={onDownloadKey}
-                  disabled={encryptKey && keyPassphrase.length === 0}
-                  className="mt-3 min-h-[40px] rounded-full border border-hairline px-5 text-[14px] font-medium text-ink transition hover:bg-white disabled:opacity-40"
+                  onClick={() => void onDownloadKey()}
+                  className="mt-3 inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-ink px-5 text-[14px] font-medium text-white transition hover:opacity-90 active:scale-[0.98]"
                 >
-                  {t("key.download")}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M12 4v11m0 0l-4-4m4 4l4-4M5 20h14"
+                      stroke="currentColor"
+                      strokeWidth="1.9"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  {t(keyDownloaded ? "key.downloadAgain" : "key.download")}
                 </button>
+                {encryptKey && keyPassphrase.length === 0 && (
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      onClick={() => void onDownloadKey(true)}
+                      className="text-xs text-zinc-500 underline decoration-zinc-300 underline-offset-2 transition hover:text-ink"
+                    >
+                      {t("key.downloadPlain")}
+                    </button>
+                    <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
+                      {t("key.plainWarning")}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </section>
