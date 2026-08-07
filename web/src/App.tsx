@@ -277,7 +277,8 @@ export function App() {
 
   const showResult = useCallback((anonymized: AnonymizeResult) => {
     setResult(anonymized);
-    setRestoreInput(anonymized.anonymizedText);
+    // The restore box starts EMPTY (guided flow): the user pastes the AI's answer, not the just-redacted
+    // text. The reworded restore.placeholder explains this.
     setRestoreResult(null);
     setRedacted(null);
     setScannedNotice(false);

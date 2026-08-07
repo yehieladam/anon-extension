@@ -53,17 +53,25 @@ async function uploadAndDownload(
 test("restore: paste → redact (in-memory key) → restore brings the originals back", async ({
   page,
 }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/");
   await page.fill("textarea", `לקוח בטלפון ${PHONE} ותעודת זהות ${ID}`);
   await page.getByRole("button", { name: "השחרת המסמך" }).click();
   await expect(page.getByRole("button", { name: "[PHONE_1]", exact: true })).toBeVisible({ timeout: 15_000 });
 
-  // Open the restore panel (its textarea is pre-filled with the anonymized text; the in-memory key from
-  // the redaction above is active) and restore. The originals appear only in the restored-text panel.
-  await page.getByText("שחזור הערכים המקוריים").click();
+  // The restore box no longer pre-fills (guided flow): copy the redacted text (this also auto-opens the
+  // restore panel), read the tokenized text back from the clipboard, paste it in and restore. The
+  // in-memory key from the redaction above is active, so the originals come back in the restored panel.
+  await page.getByRole("button", { name: /העתקה/ }).first().click();
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  const tokenized = clip.split("---")[1]?.trim() ?? clip; // the text after the AI-instruction separator
+  await page.locator("details textarea").fill(tokenized);
   await page.getByRole("button", { name: "שחזור", exact: true }).click();
-  await expect(page.getByText(PHONE, { exact: false })).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText(ID, { exact: false })).toBeVisible();
+  // Scope the assertions to the restore panel: the main input textarea still holds the raw original, and
+  // the restore box's input holds the tokens, so only the restored OUTPUT carries the raw values here.
+  const panel = page.locator("details");
+  await expect(panel.getByText(PHONE, { exact: false })).toBeVisible({ timeout: 10_000 });
+  await expect(panel.getByText(ID, { exact: false })).toBeVisible();
 });
 
 test("manual-only: redacts only the chosen term, leaves auto PII, never loads the model", async ({
