@@ -780,6 +780,14 @@ export function App() {
   // Prefer an uploaded key (restore in a later/fresh session) over the in-memory session key.
   const activeKey = uploadedKey ?? result?.key ?? null;
 
+  // M1: text pasted into the MAIN input that carries 2+ placeholder tokens is almost certainly an AI
+  // answer coming back, not a document to redact. Offer to route it into the restore flow instead of
+  // silently re-redacting the tokens.
+  const looksReturnedFromAi = useMemo(
+    () => (input.match(/\[[^[\]]*_\d+\]/g)?.length ?? 0) >= 2,
+    [input],
+  );
+
   const onRestore = useCallback(async () => {
     const restored = await getEngine().restore(restoreInput, activeKey ?? []);
     setRestoreResult(restored);
@@ -1006,6 +1014,24 @@ export function App() {
           {input.length === 0 && !result && (
             <p className="mt-2 px-2 text-xs text-zinc-400">{t("input.dropHint")}</p>
           )}
+          {looksReturnedFromAi && (
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 px-2 text-[13px] text-zinc-500">
+              <span>{t("restore.reopenPrompt")}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  // Move the pasted text into the restore flow as-is. Do NOT re-redact: these tokens are
+                  // already placeholders to be turned back into originals.
+                  setRestoreInput(input);
+                  setRestoreMode("text");
+                  openRestore();
+                }}
+                className="inline-flex min-h-[44px] items-center font-medium text-ink underline decoration-zinc-300 underline-offset-2 transition hover:decoration-ink"
+              >
+                {t("restore.title")}
+              </button>
+            </div>
+          )}
           <label className="mt-3 flex min-h-[44px] cursor-pointer select-none items-center gap-2 px-2 text-[13px] text-zinc-600">
             <input
               type="checkbox"
@@ -1098,7 +1124,7 @@ export function App() {
         </section>
 
         {result && (
-          <section className="mt-8 animate-[fadeIn_0.25s_ease]">
+          <section className="mt-8 animate-[fadeIn_200ms_ease-out]">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-medium text-ink">
