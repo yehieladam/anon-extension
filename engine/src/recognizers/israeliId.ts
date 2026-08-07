@@ -45,7 +45,7 @@ const NINE_DIGIT_RUN = /(?<!\d)\d{9}(?!\d)/g;
  * (H-id8). A separator between ת and ז is REQUIRED (so ordinary words like "תזמורת" never count as
  * context). Covers ת"ז / ת.ז, תעודת זהות, מספר זהות, ז.ת.
  */
-const ID_CONTEXT = /(?:ת\s*["'׳״.]\s*ז|תעודת\s+זהות|מספר\s+זהות|ז\s*\.\s*ת)/g;
+const ID_CONTEXT = /(?:ת["'׳״.]ז|תעודת\s+זהות|מספר\s+זהות|ז\s*\.\s*ת)/g;
 /** 7..9 digits with optional single -, ., space separators (a dropped-zero 8-digit or a grouped ID). */
 const CONTEXT_CANDIDATE = /\d(?:[-.\s]?\d){6,8}/;
 /** How far after the label to look for the value (a few words of Hebrew + punctuation). */

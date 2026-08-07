@@ -100,3 +100,34 @@ describe("israeliIdRecognizer — H-id8 (8-digit + separator forms, gated to ID 
     expect(israeliIdRecognizer.recognize(text)).toHaveLength(1);
   });
 });
+
+describe("israeliIdRecognizer — M-2 (anchored separator, no cross-word ת...ז over-refusal)", () => {
+  // The ת...ז context must be an ACTUAL ת"ז token, not ת and ז landing in two unrelated
+  // quoted words with a plain 8-digit number nearby. Each of these is an ordinary number.
+  it("does NOT flag a plain number in 'בעלת \"זכות\" בחשבון 61234506'", () => {
+    expect(israeliIdRecognizer.recognize('בעלת "זכות" בחשבון 61234506')).toHaveLength(0);
+  });
+
+  it("does NOT flag a plain number in 'עלות \"זהב\" של 61234506'", () => {
+    expect(israeliIdRecognizer.recognize('עלות "זהב" של 61234506')).toHaveLength(0);
+  });
+
+  it("does NOT flag a plain number in 'רשות \"זמנית\" מספר 61234506'", () => {
+    expect(israeliIdRecognizer.recognize('רשות "זמנית" מספר 61234506')).toHaveLength(0);
+  });
+
+  it("still detects a real ת\"ז label (positive)", () => {
+    const spans = israeliIdRecognizer.recognize('ת"ז 61234506');
+    expect(spans.map((s) => s.type)).toContain("ISRAELI_ID");
+  });
+
+  it("still detects a real ת.ז label (positive)", () => {
+    const spans = israeliIdRecognizer.recognize("ת.ז 61234506");
+    expect(spans.map((s) => s.type)).toContain("ISRAELI_ID");
+  });
+
+  it("still detects a מספר זהות label (positive)", () => {
+    const spans = israeliIdRecognizer.recognize("מספר זהות 61234506");
+    expect(spans.map((s) => s.type)).toContain("ISRAELI_ID");
+  });
+});
