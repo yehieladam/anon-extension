@@ -16,6 +16,21 @@ describe("manualSpans", () => {
     expect(manualSpans("abc", ["", "  "])).toHaveLength(0);
   });
 
+  it("matches a number as a UNIT: standalone or next to a letter, NOT inside a longer number", () => {
+    const text = "רחוב הרצל47, שנת 1947, ת״ז 304470915";
+    const spans = manualSpans(text, ["47"]);
+    expect(spans).toHaveLength(1); // only the '47' glued to the letter run 'הרצל'
+    expect(text.slice(spans[0].start - 4, spans[0].end)).toBe("הרצל47");
+  });
+
+  it("does not redact a short letter word inside a longer word", () => {
+    expect(manualSpans("דן וגם ירדן ומדן", ["דן"])).toHaveLength(1); // only the standalone דן
+  });
+
+  it("matches a hyphenated number as a whole unit", () => {
+    expect(manualSpans("טל 052-1234567 סוף", ["052-1234567"])).toHaveLength(1);
+  });
+
   it("carries a custom label onto the span (object form) and leaves plain strings unlabeled", () => {
     const spans = manualSpans("דוד וגם דוד", [{ value: "דוד", label: "CLIENT" }]);
     expect(spans).toHaveLength(2);

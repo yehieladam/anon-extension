@@ -234,6 +234,9 @@ export function App() {
   const [excludedTerms, setExcludedTerms] = useState<string[]>([]);
   const excludedRef = useRef(excludedTerms);
   excludedRef.current = excludedTerms;
+  // The preview box is capped at ~half the viewport and scrolls internally so a long document does not
+  // push the whole page; an expand toggle drops the cap.
+  const [previewExpanded, setPreviewExpanded] = useState(false);
   const [showManualInput, setShowManualInput] = useState(false);
   // Manual-only mode: redact ONLY the user's chosen terms — no automatic detection, no 185MB model.
   // Persisted so a user who prefers it never triggers a model load. A ref mirrors it so the many
@@ -1020,26 +1023,6 @@ export function App() {
                       {t("result.download")}
                     </button>
                   ))}
-                {result.key.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={onCopy}
-                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-hairline px-4 text-[13px] font-medium text-ink transition hover:bg-surface"
-                  >
-                    {copied ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path
-                          d="M5 12l4.5 4.5L19 7"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    ) : null}
-                    {copied ? t("result.copied") : t("result.copy")}
-                  </button>
-                )}
               </div>
             </div>
 
@@ -1114,21 +1097,85 @@ export function App() {
               </div>
             )}
 
-            <div
-              dir="rtl"
-              className="whitespace-pre-wrap break-words rounded-2xl border border-hairline bg-surface p-5 text-[17px] leading-loose"
-            >
-              {renderInteractive(
-                result.anonymizedText,
-                manualTokenToTerm,
-                autoTokenToOriginal,
-                onPickWord,
-                onRemoveManual,
-                onUnredactAuto,
-                t("result.clickRedact"),
-                t("result.clickUndo"),
-                t("result.clickReveal"),
+            <div className="relative">
+              {result.anonymizedText.trim().length > 0 && (
+                <div className="absolute left-3 top-3 z-10 flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={onCopy}
+                    title={t("result.copy")}
+                    aria-label={t("result.copy")}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink"
+                  >
+                    {copied ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path
+                          d="M5 12l4.5 4.5L19 7"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.8" />
+                        <path
+                          d="M5 15V5a2 2 0 0 1 2-2h8"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewExpanded((v) => !v)}
+                    title={t(previewExpanded ? "result.collapse" : "result.expand")}
+                    aria-label={t(previewExpanded ? "result.collapse" : "result.expand")}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-white/80 text-zinc-500 backdrop-blur transition hover:bg-white hover:text-ink"
+                  >
+                    {previewExpanded ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path
+                          d="M4 10h4a2 2 0 0 0 2-2V4M20 10h-4a2 2 0 0 1-2-2V4M4 14h4a2 2 0 0 1 2 2v4M20 14h-4a2 2 0 0 0-2 2v4"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path
+                          d="M9 3H5a2 2 0 0 0-2 2v4M15 3h4a2 2 0 0 1 2 2v4M9 21H5a2 2 0 0 1-2-2v-4M15 21h4a2 2 0 0 0 2-2v-4"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               )}
+              <div
+                dir="rtl"
+                className={`whitespace-pre-wrap break-words rounded-2xl border border-hairline bg-surface p-5 pt-12 text-[17px] leading-loose ${
+                  previewExpanded ? "" : "max-h-[50vh] overflow-y-auto"
+                }`}
+              >
+                {renderInteractive(
+                  result.anonymizedText,
+                  manualTokenToTerm,
+                  autoTokenToOriginal,
+                  onPickWord,
+                  onRemoveManual,
+                  onUnredactAuto,
+                  t("result.clickRedact"),
+                  t("result.clickUndo"),
+                  t("result.clickReveal"),
+                )}
+              </div>
             </div>
             <p className="mt-2 px-2 text-xs text-zinc-400">{t("result.clickHint")}</p>
             {manualOnly ? (

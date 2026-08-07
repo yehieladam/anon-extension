@@ -163,19 +163,22 @@ test("word/number split: a house number is a separate clickable unit from the st
 }) => {
   await page.goto("/");
   await page.getByRole("checkbox").first().check(); // manual-only (model-free)
-  await page.fill("textarea", "רחוב הרצל47 דירה"); // glued letter+digit must split
+  await page.fill("textarea", "רחוב הרצל47 בשנת 1947"); // glued letter+digit must split; 1947 is separate
   await page.getByRole("button", { name: "השחרת המסמך" }).click();
 
-  // "הרצל" and "47" are SEPARATE clickable units.
+  // "הרצל" and "47" are SEPARATE clickable units; the year "1947" is its own unit.
   await expect(page.getByRole("button", { name: "הרצל", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "47", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "1947", exact: true })).toBeVisible();
 
-  // Clicking only the number redacts it; the street name is untouched.
+  // Clicking only "47" redacts that unit; the street name AND the year "1947" are untouched
+  // (no substring over-redaction inside the longer number).
   await page.getByRole("button", { name: "47", exact: true }).click();
   await expect(page.getByRole("button", { name: "[TERM_1]", exact: true })).toBeVisible({
     timeout: 10_000,
   });
   await expect(page.getByRole("button", { name: "הרצל", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "1947", exact: true })).toBeVisible();
 });
 
 test("reveal: click an auto-detected token to un-redact a false positive", async ({ page }) => {
