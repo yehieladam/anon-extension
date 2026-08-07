@@ -952,6 +952,41 @@ export function App() {
         </section>
 
         <section className="mt-12">
+          <div className="mb-3 flex flex-col items-start gap-1 px-1">
+            <div
+              className="inline-flex rounded-full border border-hairline bg-surface p-0.5"
+              role="group"
+              aria-label={t("input.modeLabel")}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  if (manualOnly) onToggleManualOnly();
+                }}
+                disabled={busy}
+                aria-pressed={!manualOnly}
+                className={`min-h-[44px] rounded-full px-4 text-[13px] font-medium transition disabled:opacity-40 ${
+                  !manualOnly ? "bg-ink text-white" : "text-zinc-600 hover:text-ink"
+                }`}
+              >
+                {t("input.modeAuto")}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!manualOnly) onToggleManualOnly();
+                }}
+                disabled={busy}
+                aria-pressed={manualOnly}
+                className={`min-h-[44px] rounded-full px-4 text-[13px] font-medium transition disabled:opacity-40 ${
+                  manualOnly ? "bg-ink text-white" : "text-zinc-600 hover:text-ink"
+                }`}
+              >
+                {t("input.modeManual")}
+              </button>
+            </div>
+            {manualOnly && <p className="px-1 text-xs text-zinc-400">{t("input.modeManualHint")}</p>}
+          </div>
           <div
             onDragOver={(event) => {
               if (busy) return;
@@ -1032,16 +1067,6 @@ export function App() {
               </button>
             </div>
           )}
-          <label className="mt-3 flex min-h-[44px] cursor-pointer select-none items-center gap-2 px-2 text-[13px] text-zinc-600">
-            <input
-              type="checkbox"
-              checked={manualOnly}
-              onChange={onToggleManualOnly}
-              disabled={busy}
-              className="h-4 w-4 accent-ink"
-            />
-            <span>{t("input.manualOnly")}</span>
-          </label>
           <p className={`mt-1 px-2 text-xs ${fileError ? "text-amber-600" : "text-zinc-400"}`}>
             {statusLine}
           </p>
