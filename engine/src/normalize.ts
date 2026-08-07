@@ -37,6 +37,9 @@ function foldDigit(ch: string): string | null {
 /** Build the detection shadow + offset map. Per-character so the map stays exact (invisible chars drop,
  *  every emitted shadow char records the original index it came from). */
 export function normalizeForDetection(text: string): DetectionShadow {
+  // By design, invisibles are REMOVED (rejoined) here so a value split by an embedded mark is still
+  // detected; the trade-off is that two complete values separated ONLY by an invisible may fuse into one.
+  // Accepted as a documented narrow limitation (the rejoin behavior is the security win we want).
   let shadow = "";
   const map: number[] = [];
   for (let i = 0; i < text.length; i += 1) {
